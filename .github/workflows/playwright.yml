@@ -2,11 +2,9 @@ name: Playwright Test Automation CI/CD
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
@@ -27,13 +25,13 @@ on:
         type: choice
         options: [desktop, mobile, tablet]
       suite:
-        description: 'Test Suite Filter (smoke/regression/targetedRegression/all)'
+        description: 'Test Suite Filter'
         required: true
         default: 'smoke'
         type: choice
         options: [smoke, regression, targetedRegression, all]
       browser:
-        description: 'Browser project engine (chromium/firefox/webkit)'
+        description: 'Browser engine'
         required: true
         default: 'chromium'
         type: choice
@@ -46,7 +44,19 @@ concurrency:
 jobs:
   playwright-tests:
     name: Execute Playwright Automated Tests
-    runs-on: [self-hosted, Windows, X64, AsusWin10SelfHosted]
+
+    # ⭐ MATRIX: Run on Windows, macOS, Ubuntu, and your self-hosted runner
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest, self-hosted]
+
+    runs-on: ${{ matrix.os }}
+
+    # ⭐ Auto-select correct shell per OS
+    defaults:
+      run:
+        shell: ${{ matrix.os == 'windows-latest' || matrix.os == 'self-hosted' && 'pwsh' || 'bash' }}
+
     timeout-minutes: 120
 
     env:
@@ -66,10 +76,6 @@ jobs:
       STAGE_PASSWORD: ${{ secrets.STAGE_PASSWORD }}
       PROD_USERNAME: ${{ secrets.PROD_USERNAME }}
       PROD_PASSWORD: ${{ secrets.PROD_PASSWORD }}
-
-    defaults:
-      run:
-        shell: bash
 
     steps:
       - name: Checkout Source Code
@@ -91,7 +97,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-playwright-
 
-      - name: Install Dependencies
+      - name: Install Dependencies & Playwright Browsers
         run: |
           echo "📦 Installing npm dependencies..."
           npm ci
@@ -104,6 +110,7 @@ jobs:
         run: |
           echo "=================================================="
           echo "🚀 STARTING PLAYWRIGHT TEST RUN"
+          echo "OS          : ${{ matrix.os }}"
           echo "Environment : ${TEST_ENV}"
           echo "Application : ${TEST_APP}"
           echo "Device      : ${DEVICE}"
@@ -153,50 +160,45 @@ jobs:
           RERUN_OUTCOME="${{ steps.rerun_failed_tests.outcome }}"
 
           echo "=================================================="
-          echo "📊 FINAL TEST STATUS EVALUATION"
-          echo "Initial Run Outcome : ${INITIAL_OUTCOME}"
-          echo "Re-run Outcome     : ${RERUN_OUTCOME:-'N/A (Skipped)'}"
+          echo "📊 FINAL TEST STATUS"
+          echo "Initial Run : ${INITIAL_OUTCOME}"
+          echo "Re-run      : ${RERUN_OUTCOME:-'N/A'}"
           echo "=================================================="
 
           if [ "${INITIAL_OUTCOME}" = "failure" ] && [ "${RERUN_OUTCOME}" = "failure" ]; then
-            echo "❌ CRITICAL: Initial test run AND rerun both failed."
             exit 1
           elif [ "${INITIAL_OUTCOME}" = "failure" ] && [ "${RERUN_OUTCOME}" = "success" ]; then
-            echo "⚠️ WARNING: Initial run failed, but rerun passed all failing tests."
             exit 0
           elif [ "${INITIAL_OUTCOME}" = "success" ]; then
-            echo "✅ SUCCESS: All tests passed on initial execution."
             exit 0
           else
-            echo "ℹ️ INFO: Workflow completed with initial outcome: ${INITIAL_OUTCOME}"
+            exit 0
           fi
 
-      - name: Upload Test Artifacts and Reports
+      - name: Upload Test Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-test-results-${{ github.run_id }}
+          name: playwright-test-results-${{ github.run_id }}-${{ matrix.os }}
           path: |
             results/test-results
             results/playwright-report
           retention-days: 14
 
-      - name: Publish Test Execution Summary
+      - name: Publish Summary
         if: always()
         run: |
           INITIAL_OUTCOME="${{ steps.run_playwright_tests.outcome }}"
           RERUN_OUTCOME="${{ steps.rerun_failed_tests.outcome }}"
-          
-          echo "### 🎭 Playwright Test Execution Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 🎭 Playwright Summary (${{ matrix.os }})" >> $GITHUB_STEP_SUMMARY
           echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
           echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **OS** | \`${{ matrix.os }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Environment** | \`${TEST_ENV}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Application** | \`${TEST_APP}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Device** | \`${DEVICE}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Suite** | \`${SUITE}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Browser** | \`${BROWSER}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Initial Run Status** | \`${INITIAL_OUTCOME}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Re-run Status** | \`${RERUN_OUTCOME:-N/A}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📁 **Artifacts:** Check the summary attachments below for detailed HTML reports, JSON results, screenshots, and traces." >> $GITHUB_STEP_SUMMARY
+          echo "| **Initial Run** | \`${INITIAL_OUTCOME}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Re-run** | \`${RERUN_OUTCOME:-N/A}\` |" >> $GITHUB_STEP_SUMMARY
