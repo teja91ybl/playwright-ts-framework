@@ -167,6 +167,8 @@ jobs:
         run: |
           Write-Host "=================================================="
           Write-Host "STARTING PLAYWRIGHT TEST RUN"
+          Write-Host "Machine Name: ${{ runner.name }} ($env:COMPUTERNAME)"
+          Write-Host "OS / Arch   : ${{ runner.os }} (${{ runner.arch }})"
           Write-Host "Environment : $env:TEST_ENV"
           Write-Host "Application : $env:TEST_APP"
           Write-Host "Device      : $env:DEVICE"
@@ -276,11 +278,15 @@ jobs:
           $RerunOutcome = "${{ steps.rerun_failed_tests.outcome }}"
           if (-not $RerunOutcome) { $RerunOutcomeDisplay = "N/A" } else { $RerunOutcomeDisplay = $RerunOutcome }
 
+          $MachineName = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { $env:HOSTNAME }
+
           $SummaryLines = @(
             "### Playwright Test Execution Summary",
             "",
             "| Property | Value |",
             "| --- | --- |",
+            "| **Execution Machine / VM** | ``${{ runner.name }} ($MachineName)`` |",
+            "| **OS / Architecture** | ``${{ runner.os }} (${{ runner.arch }})`` |",
             "| **Environment** | $env:TEST_ENV |",
             "| **Application** | $env:TEST_APP |",
             "| **Device** | $env:DEVICE |",
