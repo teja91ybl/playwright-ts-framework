@@ -1,18 +1,41 @@
 name: Playwright Test Automation CI/CD
 
+# ==============================================================================
+# 1. TRIGGER DEFINITIONS
+# ==============================================================================
+# UPDATE HERE: Customize triggers according to your project's CI/CD strategy.
+# - Push / PR triggers can be configured for specific branches (e.g., main, master, develop).
+# - Manual trigger (workflow_dispatch) allows dynamic execution via GitHub UI/API.
+# ==============================================================================
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
     inputs:
+      runner:
+        description: 'Runner Machine / OS (ubuntu-latest, windows-latest, macos-latest, self-hosted)'
+        required: true
+        default: 'ubuntu-latest'
+        type: choice
+        options:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+          - self-hosted
       environment:
         description: 'Target Execution Environment (dev/test/stage/prod)'
         required: true
         default: 'test'
         type: choice
-        options: [dev, test, stage, prod]
+        options:
+          - dev
+          - test
+          - stage
+          - prod
       application:
         description: 'Application / System under test'
         required: true
@@ -23,20 +46,31 @@ on:
         required: true
         default: 'desktop'
         type: choice
-        options: [desktop, mobile, tablet]
+        options:
+          - desktop
+          - mobile
+          - tablet
       suite:
         description: 'Test Suite Filter (smoke/regression/targetedRegression/all)'
         required: true
         default: 'smoke'
         type: choice
-        options: [smoke, regression, targetedRegression, all]
+        options:
+          - smoke
+          - regression
+          - targetedRegression
+          - all
       browser:
         description: 'Browser project engine (chromium/firefox/webkit)'
         required: true
         default: 'chromium'
         type: choice
-        options: [chromium, firefox, webkit]
+        options:
+          - chromium
+          - firefox
+          - webkit
 
+# Prevents redundant parallel workflow runs on the same branch
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -44,13 +78,29 @@ concurrency:
 jobs:
   playwright-tests:
     name: Execute Playwright Automated Tests
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest, self-hosted]
-    runs-on: ${{ matrix.os }}
+
+    # ==========================================================================
+    # 2. VIRTUAL MACHINE (VM) / RUNNER SELECTION
+    # ==========================================================================
+    # Dynamic runner selection via workflow_dispatch input (default: ubuntu-latest).
+    # Standard GitHub Cloud runners: ubuntu-latest, windows-latest, macos-latest
+    # Self-hosted VM runners: self-hosted (e.g. Windows offline runner DESKTOP-1HQ5J38)
+    # ==========================================================================
+    runs-on: ${{ github.event.inputs.runner || 'ubuntu-latest' }}
+
+    # UPDATE HERE: Adjust overall job timeout limit (in minutes) for long-running suites
     timeout-minutes: 120
 
+    # ==========================================================================
+    # 3. USER CREDENTIALS & ENVIRONMENT SECRETS
+    # ==========================================================================
+    # UPDATE HERE: Map your environment credentials stored in GitHub Repository Secrets.
+    # Go to: GitHub Repository -> Settings -> Secrets and variables -> Actions
+    # Define credentials matching your targeted environments (DEV, TEST, STAGE, PROD).
+    # ==========================================================================
     env:
+      # General Environment Configuration
+      ENV: ${{ github.event.inputs.environment || 'test' }}
       TEST_ENV: ${{ github.event.inputs.environment || 'test' }}
       TEST_APP: ${{ github.event.inputs.application || 'DEMO' }}
       DEVICE: ${{ github.event.inputs.device || 'desktop' }}
@@ -58,123 +108,203 @@ jobs:
       BROWSER: ${{ github.event.inputs.browser || 'chromium' }}
       CI: true
 
+      # Environment Credentials (Injected securely from Repository Secrets)
+      # UPDATE HERE: Add, remove, or rename these secrets to match your system secrets
+      DEV_USERNAME: ${{ secrets.DEV_USERNAME }}
+      DEV_PASSWORD: ${{ secrets.DEV_PASSWORD }}
+      TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
+      TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+      STAGE_USERNAME: ${{ secrets.STAGE_USERNAME }}
+      STAGE_PASSWORD: ${{ secrets.STAGE_PASSWORD }}
+      PROD_USERNAME: ${{ secrets.PROD_USERNAME }}
+      PROD_PASSWORD: ${{ secrets.PROD_PASSWORD }}
+
+    defaults:
+      run:
+        shell: bash
+
     steps:
+      # Step 1: Check out the repository source code
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
+      # ========================================================================
+      # 4. SYSTEM & DEPENDENCY SETUP
+      # ========================================================================
+      # UPDATE HERE: Modify Node version if your project requires a specific runtime.
+      # ========================================================================
       - name: Setup Node.js (v24)
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: 'npm'
 
+      # Cache Node modules and Playwright browsers across Linux, macOS, and Windows
       - name: Cache Node Modules & Playwright Browsers
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+            ~\AppData\Local\ms-playwright
             node_modules
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-playwright-
 
-      # Linux/macOS installation
-      - name: Install Dependencies & Playwright (Linux/macOS)
-        if: runner.os != 'Windows'
-        shell: bash
+      - name: Install Dependencies
         run: |
+          echo "📦 Installing npm dependencies..."
           npm ci
-          npx playwright install --with-deps
 
-      # Windows installation
-      - name: Install Dependencies & Playwright (Windows)
-        if: runner.os == 'Windows'
-        shell: powershell
+      - name: Install Playwright Browsers & Dependencies
         run: |
-          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-          npm ci
-          npx playwright install
+          echo "🌐 Installing Playwright browser binaries..."
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            npx playwright install --with-deps
+          else
+            npx playwright install
+          fi
 
-      # Run tests
+      # ========================================================================
+      # 5. INITIAL TEST EXECUTION
+      # ========================================================================
       - name: Run Playwright Tests
         id: run_playwright_tests
         continue-on-error: true
-        shell: bash
         run: |
+          echo "=================================================="
+          echo "🚀 STARTING PLAYWRIGHT TEST RUN"
+          echo "Environment : ${TEST_ENV}"
+          echo "Application : ${TEST_APP}"
+          echo "Device      : ${DEVICE}"
+          echo "Browser     : ${BROWSER}"
+          echo "Suite       : ${SUITE}"
+          echo "=================================================="
+
+          # Build grep expression based on input suite
           GREP_ARG=""
           case "${SUITE}" in
-            smoke) GREP_ARG='--grep "@Smoke|@smoke"' ;;
-            regression) GREP_ARG='--grep "@Regression|@regression"' ;;
-            targetedRegression) GREP_ARG='--grep "@TargetedRegression|@targeted"' ;;
-            all) GREP_ARG="" ;;
+            smoke)
+              GREP_ARG='--grep "@Smoke|@smoke"'
+              ;;
+            regression)
+              GREP_ARG='--grep "@Regression|@regression"'
+              ;;
+            targetedRegression)
+              GREP_ARG='--grep "@TargetedRegression|@targeted"'
+              ;;
+            all)
+              GREP_ARG=""
+              ;;
+            *)
+              GREP_ARG=""
+              ;;
           esac
 
-          npx playwright test --project=${BROWSER} ${GREP_ARG}
+          CMD="npx playwright test --project=${BROWSER} ${GREP_ARG}"
+          echo "Executing command: ${CMD}"
+          eval ${CMD}
 
-      # Rerun failed tests
+      # ========================================================================
+      # 6. FAILED-TEST RERUN GATE
+      # ========================================================================
       - name: Re-run failed Playwright tests
         id: rerun_failed_tests
         if: steps.run_playwright_tests.outcome == 'failure'
         continue-on-error: true
-        shell: bash
         run: |
+          echo "=================================================="
+          echo "🔄 RETRYING FAILED TESTS ONLY (--last-failed)"
+          echo "=================================================="
+
           GREP_ARG=""
           case "${SUITE}" in
-            smoke) GREP_ARG='--grep "@Smoke|@smoke"' ;;
-            regression) GREP_ARG='--grep "@Regression|@regression"' ;;
-            targetedRegression) GREP_ARG='--grep "@TargetedRegression|@targeted"' ;;
-            all) GREP_ARG="" ;;
+            smoke)
+              GREP_ARG='--grep "@Smoke|@smoke"'
+              ;;
+            regression)
+              GREP_ARG='--grep "@Regression|@regression"'
+              ;;
+            targetedRegression)
+              GREP_ARG='--grep "@TargetedRegression|@targeted"'
+              ;;
+            all)
+              GREP_ARG=""
+              ;;
+            *)
+              GREP_ARG=""
+              ;;
           esac
 
-          npx playwright test --last-failed --project=${BROWSER} ${GREP_ARG}
+          CMD="npx playwright test --last-failed --project=${BROWSER} ${GREP_ARG}"
+          echo "Executing rerun command: ${CMD}"
+          eval ${CMD}
 
-      # Final status evaluation
+      # ========================================================================
+      # 7. FINAL STATUS EVALUATION GATE
+      # ========================================================================
       - name: Finalize test status
         if: always()
-        shell: powershell
         run: |
-          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+          INITIAL_OUTCOME="${{ steps.run_playwright_tests.outcome }}"
+          RERUN_OUTCOME="${{ steps.rerun_failed_tests.outcome }}"
 
-          $initial = "${{ steps.run_playwright_tests.outcome }}"
-          $rerun   = "${{ steps.rerun_failed_tests.outcome }}"
+          echo "=================================================="
+          echo "📊 FINAL TEST STATUS EVALUATION"
+          echo "Initial Run Outcome : ${INITIAL_OUTCOME}"
+          echo "Re-run Outcome     : ${RERUN_OUTCOME:-'N/A (Skipped)'}"
+          echo "=================================================="
 
-          if ($initial -eq "failure" -and $rerun -eq "failure") {
+          if [ "${INITIAL_OUTCOME}" = "failure" ] && [ "${RERUN_OUTCOME}" = "failure" ]; then
+            echo "❌ CRITICAL: Initial test run AND rerun both failed."
             exit 1
-          }
-          elseif ($initial -eq "failure" -and $rerun -eq "success") {
+          elif [ "${INITIAL_OUTCOME}" = "failure" ] && [ "${RERUN_OUTCOME}" = "success" ]; then
+            echo "⚠️ WARNING: Initial run failed, but rerun passed all failing tests."
             exit 0
-          }
-          elseif ($initial -eq "success") {
+          elif [ "${INITIAL_OUTCOME}" = "success" ]; then
+            echo "✅ SUCCESS: All tests passed on initial execution."
             exit 0
-          }
-          else {
-            exit 0
-          }
+          else
+            echo "ℹ️ INFO: Workflow completed with initial outcome: ${INITIAL_OUTCOME}"
+          fi
 
-      # Upload artifacts
+      # ========================================================================
+      # 8. ARTIFACTS AND REPORTING
+      # ========================================================================
+      # UPDATE HERE: Customize retention days or artifact paths if needed.
+      # Default paths: results/test-results, results/playwright-report
+      # ========================================================================
       - name: Upload Test Artifacts and Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-test-results-${{ github.run_id }}-${{ matrix.os }}
+          name: playwright-test-results-${{ github.run_id }}
           path: |
             results/test-results
             results/playwright-report
           retention-days: 14
 
-      # Summary
+      # ========================================================================
+      # 9. GITHUB STEP SUMMARY GENERATION
+      # ========================================================================
       - name: Publish Test Execution Summary
         if: always()
-        shell: powershell
         run: |
-          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+          INITIAL_OUTCOME="${{ steps.run_playwright_tests.outcome }}"
+          RERUN_OUTCOME="${{ steps.rerun_failed_tests.outcome }}"
 
-          $initial = "${{ steps.run_playwright_tests.outcome }}"
-          $rerun   = "${{ steps.rerun_failed_tests.outcome }}"
-
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Playwright Test Summary (${{ matrix.os }})"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| Property | Value |"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| --- | --- |"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| OS | `${{ matrix.os }}` |"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| Initial Run | `$initial` |"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| Rerun | `$rerun` |"
+          echo "### 🎭 Playwright Test Execution Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Runner / OS** | \`${{ runner.os }} (${{ github.event.inputs.runner || 'ubuntu-latest' }})\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | \`${TEST_ENV}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Application** | \`${TEST_APP}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Device** | \`${DEVICE}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Suite** | \`${SUITE}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Browser** | \`${BROWSER}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Initial Run Status** | \`${INITIAL_OUTCOME}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Re-run Status** | \`${RERUN_OUTCOME:-N/A}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📁 **Artifacts:** Check the summary attachments below for detailed HTML reports, JSON results, screenshots, and traces." >> $GITHUB_STEP_SUMMARY
