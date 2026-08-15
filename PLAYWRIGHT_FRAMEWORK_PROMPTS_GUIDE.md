@@ -223,12 +223,13 @@ Requirements:
 
 ### **Prompt 9: Create GitHub Actions Workflow**
 ```text
-You are a DevOps + QA automation engineer. Create a production-ready GitHub Actions workflow for a generic Playwright + TypeScript framework.
+You are a DevOps + QA automation engineer. Create a production-ready GitHub Actions workflow for a generic Playwright + TypeScript framework supporting both GitHub Cloud runners and Windows Self-Hosted runners.
 
 Generate `.github/workflows/playwright.yml` with the following requirements:
 
 1) Triggers
 - workflow_dispatch with inputs:
+  - runner: self-hosted/windows-latest/ubuntu-latest/macos-latest (default: self-hosted)
   - environment: dev/test/stage/prod (default: test)
   - application: DEMO (default: DEMO)
   - device: desktop/mobile/tablet (default: desktop)
@@ -237,18 +238,22 @@ Generate `.github/workflows/playwright.yml` with the following requirements:
 - pull_request on main
 - push on main
 
-2) Job setup
-- ubuntu-latest runner
+2) Job & Runner Setup
+- Dynamic runner selection: `runs-on: ${{ github.event.inputs.runner || 'self-hosted' }}`
+- Supports Windows Self-Hosted Machine (e.g. offline agent DESKTOP-1HQ5J38) and GitHub Cloud runners
+- Shell: `defaults.run.shell: powershell` for cross-platform Windows/PowerShell compatibility
+- Clean ASCII logging (no non-ASCII emojis in script blocks to prevent Windows ANSI codepage string terminator/parser errors)
 - timeout-minutes: 120
 - concurrency group to cancel in-progress runs for same branch
 - checkout repository
 - setup-node (Node 24)
 - npm ci
-- install Playwright browsers (`npx playwright install --with-deps`)
-- cache node_modules and Playwright browser cache
+- install Playwright browsers (`npx playwright install`)
+- cache node_modules and Playwright browser cache (`~\AppData\Local\ms-playwright`)
 
-3) Environment handling
+3) Environment handling & Machine Tracking
 - Export TEST_ENV, TEST_APP, DEVICE from workflow inputs
+- Automatically detect and print Virtual Machine / Runner Name (`${{ runner.name }}`, `$env:COMPUTERNAME` / `$env:HOSTNAME`), OS (`${{ runner.os }}`), and Architecture (`${{ runner.arch }}`) in console execution headers and Step Summaries
 - Load secrets as env vars:
   - DEV_USERNAME/DEV_PASSWORD
   - TEST_USERNAME/TEST_PASSWORD
@@ -257,12 +262,12 @@ Generate `.github/workflows/playwright.yml` with the following requirements:
 
 4) Test execution
 - Step id: run_playwright_tests
-- Run suite by input:
-  - smoke => --grep "@Smoke"
-  - regression => --grep "@Regression"
-  - targetedRegression => --grep "@TargetedRegression"
+- Run suite by input via PowerShell switch ($env:SUITE):
+  - smoke => --grep "@Smoke|@smoke"
+  - regression => --grep "@Regression|@regression"
+  - targetedRegression => --grep "@TargetedRegression|@targeted"
   - all => no grep filter
-- Support browser project selection via --project
+- Support browser project selection via --project=$env:BROWSER
 - continue-on-error: true for first run
 
 5) Failed-test rerun
@@ -281,22 +286,18 @@ Generate `.github/workflows/playwright.yml` with the following requirements:
 - Always upload:
   - results/test-results
   - results/playwright-report
-  - traces/screenshots/videos if present
 - Retention: 14 days
-- Add summary to GitHub Step Summary with:
+- Add summary to GitHub Step Summary table with:
+  - Execution Machine / VM name and host
+  - OS / Architecture
   - env/app/device/suite/browser
   - initial outcome
   - rerun outcome
-  - artifact links
 
 8) Quality and reliability
 - Use `if: always()` for artifact upload
-- Use shell: bash
-- Add clear log echoes for each stage
+- Pure ASCII text in PowerShell scripts to guarantee error-free parsing on Windows self-hosted runners
+- Clear log echoes for each stage
 - No hardcoded app URLs or credentials in YAML
 - Keep workflow generic and reusable for any app
-
-9) Output format
-- Return full YAML only, ready to save as `.github/workflows/playwright.yml`
-- Ensure valid syntax and no placeholders that break execution
 ```

@@ -131,6 +131,26 @@ npm run test:trace
 
 ---
 
+## ⚙️ CI/CD & GitHub Actions Execution
+
+The framework includes a production-ready GitHub Actions workflow (`.github/workflows/playwright.yml`) supporting both **GitHub Cloud runners** and **Self-Hosted Windows runners** (e.g. offline laptop/VM runners like `DESKTOP-1HQ5J38`).
+
+### Triggering via GitHub Actions UI (`workflow_dispatch`)
+When running manually from the **Actions** tab on GitHub:
+1. Select target **Runner Machine / OS**:
+   - `self-hosted`: Executes directly on your local/offline self-hosted Windows machine.
+   - `ubuntu-latest` / `windows-latest` / `macos-latest`: Executes on GitHub Cloud virtual machines.
+2. Select **Environment** (`dev` / `test` / `stage` / `prod`).
+3. Select **Test Suite** (`smoke` / `regression` / `targetedRegression` / `all`).
+4. Select **Browser Engine** (`chromium` / `firefox` / `webkit`).
+
+### Machine Identification & Tracking
+Every workflow run automatically identifies and logs the Virtual Machine / Host details in both the **Console Log Execution Header** and the **GitHub Actions Step Summary Table**:
+- **Execution Machine / VM**: Displays `${{ runner.name }}` and local `$COMPUTERNAME` or `$HOSTNAME`.
+- **OS / Architecture**: Displays `${{ runner.os }}` and `${{ runner.arch }}` (e.g., `Windows (X64)` or `Linux (X64)`).
+
+---
+
 ## 🛠️ Windows PATH & Browser Troubleshooting
 
 1. **Execution Policy Error in PowerShell**:
