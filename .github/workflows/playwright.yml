@@ -102,6 +102,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: powershell
         run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
           Write-Host "Installing npm dependencies..."
           npm ci
           Write-Host "Installing Playwright browsers..."
@@ -165,59 +166,7 @@ jobs:
         if: always()
         shell: powershell
         run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
           $initial = ${{ steps.run_playwright_tests.outcome }}
           $rerun   = ${{ steps.rerun_failed_tests.outcome }}
 
-          Write-Host "=================================================="
-          Write-Host "📊 FINAL TEST STATUS EVALUATION"
-          Write-Host "Initial Run Outcome : $initial"
-          if ($rerun) {
-            Write-Host "Re-run Outcome     : $rerun"
-          } else {
-            Write-Host "Re-run Outcome     : N/A (Skipped)"
-          }
-          Write-Host "=================================================="
-
-          if ($initial -eq "failure" -and $rerun -eq "failure") {
-            Write-Host "❌ CRITICAL: Initial test run AND rerun both failed."
-            exit 1
-          } elseif ($initial -eq "failure" -and $rerun -eq "success") {
-            Write-Host "⚠️ WARNING: Initial run failed, but rerun passed all failing tests."
-            exit 0
-          } elseif ($initial -eq "success") {
-            Write-Host "✅ SUCCESS: All tests passed on initial execution."
-            exit 0
-          } else {
-            Write-Host "ℹ️ INFO: Workflow completed with initial outcome: $initial"
-          }
-
-      # --- Upload Test Artifacts ---
-      - name: Upload Test Artifacts and Reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-test-results-${{ github.run_id }}-${{ matrix.os }}
-          path: |
-            results/test-results
-            results/playwright-report
-          retention-days: 14
-
-      # --- Publish Test Execution Summary ---
-      - name: Publish Test Execution Summary
-        if: always()
-        shell: powershell
-        run: |
-          $initial = ${{ steps.run_playwright_tests.outcome }}
-          $rerun   = ${{ steps.rerun_failed_tests.outcome }}
-
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Playwright Test Execution Summary (${{ matrix.os }})"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| Property | Value |"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| --- | --- |"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **OS** | `${{ matrix.os }}` |"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **Environment** | `${env:TEST_ENV}` |"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **Application** | `${env:TEST_APP}` |"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **Device** | `${env:DEVICE}` |"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **Suite** | `${env:SUITE}` |"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **Browser** | `${env:BROWSER}` |"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **Initial Run Status** | `$initial` |"
