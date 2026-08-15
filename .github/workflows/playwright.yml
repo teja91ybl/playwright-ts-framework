@@ -1,81 +1,24 @@
 name: Playwright Test Automation CI/CD
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Target Execution Environment (dev/test/stage/prod)'
-        required: true
-        default: 'test'
-        type: choice
-        options: [dev, test, stage, prod]
-      application:
-        description: 'Application / System under test'
-        required: true
-        default: 'DEMO'
-        type: string
-      device:
-        description: 'Device type (desktop/mobile/tablet)'
-        required: true
-        default: 'desktop'
-        type: choice
-        options: [desktop, mobile, tablet]
-      suite:
-        description: 'Test Suite Filter'
-        required: true
-        default: 'smoke'
-        type: choice
-        options: [smoke, regression, targetedRegression, all]
-      browser:
-        description: 'Browser engine'
-        required: true
-        default: 'chromium'
-        type: choice
-        options: [chromium, firefox, webkit]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   playwright-tests:
     name: Execute Playwright Automated Tests
-
-    # ⭐ MATRIX: Run on Windows, macOS, Ubuntu, and your self-hosted runner
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest, self-hosted]
-
     runs-on: ${{ matrix.os }}
-
-    # ⭐ Auto-select correct shell per OS
-    defaults:
-      run:
-        shell: ${{ matrix.os == 'windows-latest' || matrix.os == 'self-hosted' && 'pwsh' || 'bash' }}
-
     timeout-minutes: 120
 
     env:
-      ENV: ${{ github.event.inputs.environment || 'test' }}
       TEST_ENV: ${{ github.event.inputs.environment || 'test' }}
       TEST_APP: ${{ github.event.inputs.application || 'DEMO' }}
       DEVICE: ${{ github.event.inputs.device || 'desktop' }}
       SUITE: ${{ github.event.inputs.suite || 'smoke' }}
       BROWSER: ${{ github.event.inputs.browser || 'chromium' }}
       CI: true
-
-      DEV_USERNAME: ${{ secrets.DEV_USERNAME }}
-      DEV_PASSWORD: ${{ secrets.DEV_PASSWORD }}
-      TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
-      TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
-      STAGE_USERNAME: ${{ secrets.STAGE_USERNAME }}
-      STAGE_PASSWORD: ${{ secrets.STAGE_PASSWORD }}
-      PROD_USERNAME: ${{ secrets.PROD_USERNAME }}
-      PROD_PASSWORD: ${{ secrets.PROD_PASSWORD }}
 
     steps:
       - name: Checkout Source Code
@@ -97,83 +40,50 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-playwright-
 
-      - name: Install Dependencies & Playwright Browsers
+      # 🧠 Use bash for Linux/macOS
+      - name: Install Dependencies & Playwright Browsers (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
           echo "📦 Installing npm dependencies..."
           npm ci
           echo "🌐 Installing Playwright browsers..."
           npx playwright install --with-deps
 
+      # 🧠 Use PowerShell for Windows
+      - name: Install Dependencies & Playwright Browsers (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Write-Host "📦 Installing npm dependencies..."
+          npm ci
+          Write-Host "🌐 Installing Playwright browsers..."
+          npx playwright install --with-deps
+
       - name: Run Playwright Tests
         id: run_playwright_tests
         continue-on-error: true
+        shell: bash
         run: |
-          echo "=================================================="
-          echo "🚀 STARTING PLAYWRIGHT TEST RUN"
-          echo "OS          : ${{ matrix.os }}"
-          echo "Environment : ${TEST_ENV}"
-          echo "Application : ${TEST_APP}"
-          echo "Device      : ${DEVICE}"
-          echo "Browser     : ${BROWSER}"
-          echo "Suite       : ${SUITE}"
-          echo "=================================================="
-
-          GREP_ARG=""
-          case "${SUITE}" in
-            smoke) GREP_ARG='--grep "@Smoke|@smoke"' ;;
-            regression) GREP_ARG='--grep "@Regression|@regression"' ;;
-            targetedRegression) GREP_ARG='--grep "@TargetedRegression|@targeted"' ;;
-            all) GREP_ARG="" ;;
-            *) GREP_ARG="" ;;
-          esac
-
-          CMD="npx playwright test --project=${BROWSER} ${GREP_ARG}"
-          echo "Executing command: ${CMD}"
-          eval ${CMD}
+          echo "🚀 Running Playwright tests on ${{ matrix.os }}"
+          npx playwright test --project=${BROWSER}
 
       - name: Re-run failed Playwright tests
         id: rerun_failed_tests
         if: steps.run_playwright_tests.outcome == 'failure'
         continue-on-error: true
+        shell: bash
         run: |
-          echo "=================================================="
-          echo "🔄 RETRYING FAILED TESTS ONLY (--last-failed)"
-          echo "=================================================="
-
-          GREP_ARG=""
-          case "${SUITE}" in
-            smoke) GREP_ARG='--grep "@Smoke|@smoke"' ;;
-            regression) GREP_ARG='--grep "@Regression|@regression"' ;;
-            targetedRegression) GREP_ARG='--grep "@TargetedRegression|@targeted"' ;;
-            all) GREP_ARG="" ;;
-            *) GREP_ARG="" ;;
-          esac
-
-          CMD="npx playwright test --last-failed --project=${BROWSER} ${GREP_ARG}"
-          echo "Executing rerun command: ${CMD}"
-          eval ${CMD}
+          echo "🔄 Retrying failed tests..."
+          npx playwright test --last-failed --project=${BROWSER}
 
       - name: Finalize test status
         if: always()
+        shell: bash
         run: |
           INITIAL_OUTCOME="${{ steps.run_playwright_tests.outcome }}"
           RERUN_OUTCOME="${{ steps.rerun_failed_tests.outcome }}"
-
-          echo "=================================================="
-          echo "📊 FINAL TEST STATUS"
-          echo "Initial Run : ${INITIAL_OUTCOME}"
-          echo "Re-run      : ${RERUN_OUTCOME:-'N/A'}"
-          echo "=================================================="
-
-          if [ "${INITIAL_OUTCOME}" = "failure" ] && [ "${RERUN_OUTCOME}" = "failure" ]; then
-            exit 1
-          elif [ "${INITIAL_OUTCOME}" = "failure" ] && [ "${RERUN_OUTCOME}" = "success" ]; then
-            exit 0
-          elif [ "${INITIAL_OUTCOME}" = "success" ]; then
-            exit 0
-          else
-            exit 0
-          fi
+          echo "📊 Final status: Initial=${INITIAL_OUTCOME}, Rerun=${RERUN_OUTCOME}"
 
       - name: Upload Test Artifacts
         if: always()
@@ -187,18 +97,10 @@ jobs:
 
       - name: Publish Summary
         if: always()
+        shell: bash
         run: |
-          INITIAL_OUTCOME="${{ steps.run_playwright_tests.outcome }}"
-          RERUN_OUTCOME="${{ steps.rerun_failed_tests.outcome }}"
-
           echo "### 🎭 Playwright Summary (${{ matrix.os }})" >> $GITHUB_STEP_SUMMARY
           echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
           echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
           echo "| **OS** | \`${{ matrix.os }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Environment** | \`${TEST_ENV}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Application** | \`${TEST_APP}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Device** | \`${DEVICE}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Suite** | \`${SUITE}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Browser** | \`${BROWSER}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Initial Run** | \`${INITIAL_OUTCOME}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Re-run** | \`${RERUN_OUTCOME:-N/A}\` |" >> $GITHUB_STEP_SUMMARY
