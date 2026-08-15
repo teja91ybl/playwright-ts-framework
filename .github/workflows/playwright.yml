@@ -1,12 +1,5 @@
 name: Playwright Test Automation CI/CD
 
-# ==============================================================================
-# 1. TRIGGER DEFINITIONS
-# ==============================================================================
-# UPDATE HERE: Customize triggers according to your project's CI/CD strategy.
-# - Push / PR triggers can be configured for specific branches (e.g., main, master, develop).
-# - Manual trigger (workflow_dispatch) allows dynamic execution via GitHub UI/API.
-# ==============================================================================
 on:
   push:
     branches:
@@ -21,11 +14,7 @@ on:
         required: true
         default: 'test'
         type: choice
-        options:
-          - dev
-          - test
-          - stage
-          - prod
+        options: [dev, test, stage, prod]
       application:
         description: 'Application / System under test'
         required: true
@@ -36,31 +25,20 @@ on:
         required: true
         default: 'desktop'
         type: choice
-        options:
-          - desktop
-          - mobile
-          - tablet
+        options: [desktop, mobile, tablet]
       suite:
         description: 'Test Suite Filter (smoke/regression/targetedRegression/all)'
         required: true
         default: 'smoke'
         type: choice
-        options:
-          - smoke
-          - regression
-          - targetedRegression
-          - all
+        options: [smoke, regression, targetedRegression, all]
       browser:
         description: 'Browser project engine (chromium/firefox/webkit)'
         required: true
         default: 'chromium'
         type: choice
-        options:
-          - chromium
-          - firefox
-          - webkit
+        options: [chromium, firefox, webkit]
 
-# Prevents redundant parallel workflow runs on the same branch
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -68,28 +46,10 @@ concurrency:
 jobs:
   playwright-tests:
     name: Execute Playwright Automated Tests
-    
-    # ==========================================================================
-    # 2. VIRTUAL MACHINE (VM) / RUNNER SELECTION
-    # ==========================================================================
-    # UPDATE HERE: Change runner OS or VM pool based on your environment needs.
-    # Standard GitHub runners: ubuntu-latest, windows-latest, macos-latest
-    # Self-hosted VM runners: [self-hosted, linux, x64, custom-vm-label]
-    # ==========================================================================
     runs-on: [self-hosted, Windows, X64, AsusWin10SelfHosted]
-    
-    # UPDATE HERE: Adjust overall job timeout limit (in minutes) for long-running suites
     timeout-minutes: 120
 
-    # ==========================================================================
-    # 3. USER CREDENTIALS & ENVIRONMENT SECRETS
-    # ==========================================================================
-    # UPDATE HERE: Map your environment credentials stored in GitHub Repository Secrets.
-    # Go to: GitHub Repository -> Settings -> Secrets and variables -> Actions
-    # Define credentials matching your targeted environments (DEV, TEST, STAGE, PROD).
-    # ==========================================================================
     env:
-      # General Environment Configuration
       ENV: ${{ github.event.inputs.environment || 'test' }}
       TEST_ENV: ${{ github.event.inputs.environment || 'test' }}
       TEST_APP: ${{ github.event.inputs.application || 'DEMO' }}
@@ -98,8 +58,6 @@ jobs:
       BROWSER: ${{ github.event.inputs.browser || 'chromium' }}
       CI: true
 
-      # Environment Credentials (Injected securely from Repository Secrets)
-      # UPDATE HERE: Add, remove, or rename these secrets to match your system secrets
       DEV_USERNAME: ${{ secrets.DEV_USERNAME }}
       DEV_PASSWORD: ${{ secrets.DEV_PASSWORD }}
       TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
@@ -114,22 +72,15 @@ jobs:
         shell: bash
 
     steps:
-      # Step 1: Check out the repository source code
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      # ========================================================================
-      # 4. SYSTEM & DEPENDENCY SETUP
-      # ========================================================================
-      # UPDATE HERE: Modify Node version if your project requires a specific runtime.
-      # ========================================================================
       - name: Setup Node.js (v24)
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: 'npm'
 
-      # Cache Node modules and Playwright browsers to accelerate test execution
       - name: Cache Node Modules & Playwright Browsers
         uses: actions/cache@v4
         with:
@@ -144,15 +95,9 @@ jobs:
         run: |
           echo "📦 Installing npm dependencies..."
           npm ci
-
-      - name: Install Playwright Browsers & Dependencies
-        run: |
-          echo "🌐 Installing Playwright browser binaries with OS dependencies..."
+          echo "🌐 Installing Playwright browsers..."
           npx playwright install --with-deps
 
-      # ========================================================================
-      # 5. INITIAL TEST EXECUTION
-      # ========================================================================
       - name: Run Playwright Tests
         id: run_playwright_tests
         continue-on-error: true
@@ -166,33 +111,19 @@ jobs:
           echo "Suite       : ${SUITE}"
           echo "=================================================="
 
-          # Build grep expression based on input suite
           GREP_ARG=""
           case "${SUITE}" in
-            smoke)
-              GREP_ARG='--grep "@Smoke|@smoke"'
-              ;;
-            regression)
-              GREP_ARG='--grep "@Regression|@regression"'
-              ;;
-            targetedRegression)
-              GREP_ARG='--grep "@TargetedRegression|@targeted"'
-              ;;
-            all)
-              GREP_ARG=""
-              ;;
-            *)
-              GREP_ARG=""
-              ;;
+            smoke) GREP_ARG='--grep "@Smoke|@smoke"' ;;
+            regression) GREP_ARG='--grep "@Regression|@regression"' ;;
+            targetedRegression) GREP_ARG='--grep "@TargetedRegression|@targeted"' ;;
+            all) GREP_ARG="" ;;
+            *) GREP_ARG="" ;;
           esac
 
           CMD="npx playwright test --project=${BROWSER} ${GREP_ARG}"
           echo "Executing command: ${CMD}"
           eval ${CMD}
 
-      # ========================================================================
-      # 6. FAILED-TEST RERUN GATE
-      # ========================================================================
       - name: Re-run failed Playwright tests
         id: rerun_failed_tests
         if: steps.run_playwright_tests.outcome == 'failure'
@@ -204,30 +135,17 @@ jobs:
 
           GREP_ARG=""
           case "${SUITE}" in
-            smoke)
-              GREP_ARG='--grep "@Smoke|@smoke"'
-              ;;
-            regression)
-              GREP_ARG='--grep "@Regression|@regression"'
-              ;;
-            targetedRegression)
-              GREP_ARG='--grep "@TargetedRegression|@targeted"'
-              ;;
-            all)
-              GREP_ARG=""
-              ;;
-            *)
-              GREP_ARG=""
-              ;;
+            smoke) GREP_ARG='--grep "@Smoke|@smoke"' ;;
+            regression) GREP_ARG='--grep "@Regression|@regression"' ;;
+            targetedRegression) GREP_ARG='--grep "@TargetedRegression|@targeted"' ;;
+            all) GREP_ARG="" ;;
+            *) GREP_ARG="" ;;
           esac
 
           CMD="npx playwright test --last-failed --project=${BROWSER} ${GREP_ARG}"
           echo "Executing rerun command: ${CMD}"
           eval ${CMD}
 
-      # ========================================================================
-      # 7. FINAL STATUS EVALUATION GATE
-      # ========================================================================
       - name: Finalize test status
         if: always()
         run: |
@@ -253,12 +171,6 @@ jobs:
             echo "ℹ️ INFO: Workflow completed with initial outcome: ${INITIAL_OUTCOME}"
           fi
 
-      # ========================================================================
-      # 8. ARTIFACTS AND REPORTING
-      # ========================================================================
-      # UPDATE HERE: Customize retention days or artifact paths if needed.
-      # Default paths: results/test-results, results/playwright-report
-      # ========================================================================
       - name: Upload Test Artifacts and Reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -269,9 +181,6 @@ jobs:
             results/playwright-report
           retention-days: 14
 
-      # ========================================================================
-      # 9. GITHUB STEP SUMMARY GENERATION
-      # ========================================================================
       - name: Publish Test Execution Summary
         if: always()
         run: |
