@@ -1,0 +1,19 @@
+node_modules/
+results/test-results/
+results/playwright-report/
+results/artifacts/
+!results/test-results/.gitkeep
+!results/playwright-report/.gitkeep
+!results/artifacts/.gitkeep
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+.env
+.env.*
+!.env.example
+
+# OS generated files
+.DS_Store
+Thumbs.db

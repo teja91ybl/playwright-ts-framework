@@ -1,0 +1,76 @@
+You are a DevOps + QA automation engineer. Create a production-ready GitHub Actions workflow for a generic Playwright + TypeScript framework.
+
+Generate `.github/workflows/playwright.yml` with the following requirements:
+
+1) Triggers
+- workflow_dispatch with inputs:
+  - environment: dev/test/stage/prod (default: test)
+  - application: DEMO (default: DEMO)
+  - device: desktop/mobile/tablet (default: desktop)
+  - suite: smoke/regression/targetedRegression/all (default: smoke)
+  - browser: chromium/firefox/webkit (default: chromium)
+- pull_request on main
+- push on main
+
+2) Job setup
+- ubuntu-latest runner
+- timeout-minutes: 120
+- concurrency group to cancel in-progress runs for same branch
+- checkout
+- setup-node (Node 24)
+- npm ci
+- install Playwright browsers (`npx playwright install --with-deps`)
+- cache node_modules and Playwright browser cache
+
+3) Environment handling
+- Export TEST_ENV, TEST_APP, DEVICE from workflow inputs
+- Load secrets as env vars:
+  - DEV_USERNAME/DEV_PASSWORD
+  - TEST_USERNAME/TEST_PASSWORD
+  - STAGE_USERNAME/STAGE_PASSWORD
+  - PROD_USERNAME/PROD_PASSWORD
+
+4) Test execution
+- Step id: run_playwright_tests
+- Run suite by input:
+  - smoke => --grep "@Smoke"
+  - regression => --grep "@Regression"
+  - targetedRegression => --grep "@TargetedRegression"
+  - all => no grep filter
+- Support browser project selection via --project
+- continue-on-error: true for first run
+
+5) Failed-test rerun
+- Step name: Re-run failed Playwright tests
+- id: rerun_failed_tests
+- if: steps.run_playwright_tests.outcome == 'failure'
+- run: `npx playwright test --last-failed` with same env/app/device/project
+- continue-on-error: true
+
+6) Final status gate
+- Step: Finalize test status
+- Fail job only if initial run failed AND rerun failed
+- Pass job if rerun succeeds
+
+7) Artifacts and reports
+- Always upload:
+  - results/test-results
+  - results/playwright-report
+  - traces/screenshots/videos if present
+- Retention: 14 days
+- Add summary to GitHub Step Summary with:
+  - env/app/device/suite/browser
+  - initial outcome
+  - rerun outcome
+  - artifact links
+
+8) Quality and reliability
+- Use `if: always()` for artifact upload
+- Use shell: bash
+- Add clear log echoes for each stage
+- No hardcoded app URLs or credentials in YAML
+- Keep workflow generic and reusable for any app
+
+9) Output format
+- Return full YAML only, ready to save as `.github/workflows/playwright.yml`
+- Ensure valid syntax and no placeholders that break execution

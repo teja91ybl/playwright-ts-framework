@@ -1,0 +1,16 @@
+{
+  "demoUser": {
+    "username": "demo_user",
+    "email": "demo_user@example.com",
+    "role": "admin"
+  },
+  "searchKeywords": [
+    "Playwright",
+    "TypeScript",
+    "Automation"
+  ],
+  "testOptions": {
+    "timeout": 30000,
+    "retries": 1
+  }
+}
