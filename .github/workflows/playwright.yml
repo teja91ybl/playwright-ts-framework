@@ -99,7 +99,7 @@ jobs:
 
       - name: Install Dependencies & Playwright (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: powershell
         run: |
           Write-Host "📦 Installing npm dependencies..."
           npm ci
@@ -159,7 +159,7 @@ jobs:
 
       - name: Finalize test status
         if: always()
-        shell: pwsh
+        shell: powershell
         run: |
           $initial = "${{ steps.run_playwright_tests.outcome }}"
           $rerun   = "${{ steps.rerun_failed_tests.outcome }}"
@@ -194,7 +194,7 @@ jobs:
 
       - name: Publish Test Execution Summary
         if: always()
-        shell: pwsh
+        shell: powershell
         run: |
           $initial = "${{ steps.run_playwright_tests.outcome }}"
           $rerun   = "${{ steps.rerun_failed_tests.outcome }}"
@@ -206,4 +206,8 @@ jobs:
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **OS** | `${{ matrix.os }}` |"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **Environment** | `${env:TEST_ENV}` |"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **Application** | `${env:TEST_APP}` |"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **Device** | `${env
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **Device** | `${env:DEVICE}` |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **Suite** | `${env:SUITE}` |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **Browser** | `${env:BROWSER}` |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **Initial Run Status** | `$initial` |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| **Re-run Status** | `$($rerun -ne '' ? $rerun : 'N/A
