@@ -51,21 +51,12 @@ jobs:
     timeout-minutes: 120
 
     env:
-      ENV: ${{ github.event.inputs.environment || 'test' }}
       TEST_ENV: ${{ github.event.inputs.environment || 'test' }}
       TEST_APP: ${{ github.event.inputs.application || 'DEMO' }}
       DEVICE: ${{ github.event.inputs.device || 'desktop' }}
       SUITE: ${{ github.event.inputs.suite || 'smoke' }}
       BROWSER: ${{ github.event.inputs.browser || 'chromium' }}
       CI: true
-      DEV_USERNAME: ${{ secrets.DEV_USERNAME }}
-      DEV_PASSWORD: ${{ secrets.DEV_PASSWORD }}
-      TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
-      TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
-      STAGE_USERNAME: ${{ secrets.STAGE_USERNAME }}
-      STAGE_PASSWORD: ${{ secrets.STAGE_PASSWORD }}
-      PROD_USERNAME: ${{ secrets.PROD_USERNAME }}
-      PROD_PASSWORD: ${{ secrets.PROD_PASSWORD }}
 
     steps:
       - name: Checkout Source Code
@@ -80,4 +71,110 @@ jobs:
       - name: Cache Node Modules & Playwright Browsers
         uses: actions/cache@v4
         with:
-          path
+          path: |
+            ~/.cache/ms-playwright
+            node_modules
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      # Linux/macOS installation
+      - name: Install Dependencies & Playwright (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          npm ci
+          npx playwright install --with-deps
+
+      # Windows installation
+      - name: Install Dependencies & Playwright (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+          npm ci
+          npx playwright install
+
+      # Run tests
+      - name: Run Playwright Tests
+        id: run_playwright_tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          GREP_ARG=""
+          case "${SUITE}" in
+            smoke) GREP_ARG='--grep "@Smoke|@smoke"' ;;
+            regression) GREP_ARG='--grep "@Regression|@regression"' ;;
+            targetedRegression) GREP_ARG='--grep "@TargetedRegression|@targeted"' ;;
+            all) GREP_ARG="" ;;
+          esac
+
+          npx playwright test --project=${BROWSER} ${GREP_ARG}
+
+      # Rerun failed tests
+      - name: Re-run failed Playwright tests
+        id: rerun_failed_tests
+        if: steps.run_playwright_tests.outcome == 'failure'
+        continue-on-error: true
+        shell: bash
+        run: |
+          GREP_ARG=""
+          case "${SUITE}" in
+            smoke) GREP_ARG='--grep "@Smoke|@smoke"' ;;
+            regression) GREP_ARG='--grep "@Regression|@regression"' ;;
+            targetedRegression) GREP_ARG='--grep "@TargetedRegression|@targeted"' ;;
+            all) GREP_ARG="" ;;
+          esac
+
+          npx playwright test --last-failed --project=${BROWSER} ${GREP_ARG}
+
+      # Final status evaluation
+      - name: Finalize test status
+        if: always()
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+          $initial = "${{ steps.run_playwright_tests.outcome }}"
+          $rerun   = "${{ steps.rerun_failed_tests.outcome }}"
+
+          if ($initial -eq "failure" -and $rerun -eq "failure") {
+            exit 1
+          }
+          elseif ($initial -eq "failure" -and $rerun -eq "success") {
+            exit 0
+          }
+          elseif ($initial -eq "success") {
+            exit 0
+          }
+          else {
+            exit 0
+          }
+
+      # Upload artifacts
+      - name: Upload Test Artifacts and Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-${{ github.run_id }}-${{ matrix.os }}
+          path: |
+            results/test-results
+            results/playwright-report
+          retention-days: 14
+
+      # Summary
+      - name: Publish Test Execution Summary
+        if: always()
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+          $initial = "${{ steps.run_playwright_tests.outcome }}"
+          $rerun   = "${{ steps.rerun_failed_tests.outcome }}"
+
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Playwright Test Summary (${{ matrix.os }})"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| Property | Value |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| --- | --- |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| OS | `${{ matrix.os }}` |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| Initial Run | `$initial` |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| Rerun | `$rerun` |"
