@@ -17,15 +17,15 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: 'Runner Machine / OS (ubuntu-latest, windows-latest, macos-latest, self-hosted)'
+        description: 'Runner Machine / OS (self-hosted, windows-latest, ubuntu-latest, macos-latest)'
         required: true
-        default: 'ubuntu-latest'
+        default: 'self-hosted'
         type: choice
         options:
-          - ubuntu-latest
-          - windows-latest
-          - macos-latest
           - self-hosted
+          - windows-latest
+          - ubuntu-latest
+          - macos-latest
       environment:
         description: 'Target Execution Environment (dev/test/stage/prod)'
         required: true
@@ -82,11 +82,9 @@ jobs:
     # ==========================================================================
     # 2. VIRTUAL MACHINE (VM) / RUNNER SELECTION
     # ==========================================================================
-    # Dynamic runner selection via workflow_dispatch input (default: ubuntu-latest).
-    # Standard GitHub Cloud runners: ubuntu-latest, windows-latest, macos-latest
-    # Self-hosted VM runners: self-hosted (e.g. Windows offline runner DESKTOP-1HQ5J38)
+    # Configured for Windows Self-Hosted Runner (DESKTOP-1HQ5J38) or UI choice.
     # ==========================================================================
-    runs-on: ${{ github.event.inputs.runner || 'ubuntu-latest' }}
+    runs-on: ${{ github.event.inputs.runner || 'self-hosted' }}
 
     # UPDATE HERE: Adjust overall job timeout limit (in minutes) for long-running suites
     timeout-minutes: 120
@@ -121,7 +119,7 @@ jobs:
 
     defaults:
       run:
-        shell: bash
+        shell: powershell
 
     steps:
       # Step 1: Check out the repository source code
@@ -139,13 +137,11 @@ jobs:
           node-version: 24
           cache: 'npm'
 
-      # Cache Node modules and Playwright browsers across Linux, macOS, and Windows
+      # Cache Node modules and Playwright browsers for Windows
       - name: Cache Node Modules & Playwright Browsers
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/ms-playwright
-            ~/Library/Caches/ms-playwright
             ~\AppData\Local\ms-playwright
             node_modules
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
@@ -154,17 +150,13 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          echo "📦 Installing npm dependencies..."
+          Write-Host "📦 Installing npm dependencies..."
           npm ci
 
-      - name: Install Playwright Browsers & Dependencies
+      - name: Install Playwright Browsers
         run: |
-          echo "🌐 Installing Playwright browser binaries..."
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            npx playwright install --with-deps
-          else
-            npx playwright install
-          fi
+          Write-Host "🌐 Installing Playwright browser binaries..."
+          npx playwright install
 
       # ========================================================================
       # 5. INITIAL TEST EXECUTION
@@ -173,38 +165,31 @@ jobs:
         id: run_playwright_tests
         continue-on-error: true
         run: |
-          echo "=================================================="
-          echo "🚀 STARTING PLAYWRIGHT TEST RUN"
-          echo "Environment : ${TEST_ENV}"
-          echo "Application : ${TEST_APP}"
-          echo "Device      : ${DEVICE}"
-          echo "Browser     : ${BROWSER}"
-          echo "Suite       : ${SUITE}"
-          echo "=================================================="
+          Write-Host "=================================================="
+          Write-Host "🚀 STARTING PLAYWRIGHT TEST RUN"
+          Write-Host "Environment : $env:TEST_ENV"
+          Write-Host "Application : $env:TEST_APP"
+          Write-Host "Device      : $env:DEVICE"
+          Write-Host "Browser     : $env:BROWSER"
+          Write-Host "Suite       : $env:SUITE"
+          Write-Host "=================================================="
 
-          # Build grep expression based on input suite
-          GREP_ARG=""
-          case "${SUITE}" in
-            smoke)
-              GREP_ARG='--grep "@Smoke|@smoke"'
-              ;;
-            regression)
-              GREP_ARG='--grep "@Regression|@regression"'
-              ;;
-            targetedRegression)
-              GREP_ARG='--grep "@TargetedRegression|@targeted"'
-              ;;
-            all)
-              GREP_ARG=""
-              ;;
-            *)
-              GREP_ARG=""
-              ;;
-          esac
+          $GrepArg = ""
+          switch ($env:SUITE) {
+            "smoke"              { $GrepArg = '--grep "@Smoke|@smoke"' }
+            "regression"         { $GrepArg = '--grep "@Regression|@regression"' }
+            "targetedRegression" { $GrepArg = '--grep "@TargetedRegression|@targeted"' }
+            default              { $GrepArg = "" }
+          }
 
-          CMD="npx playwright test --project=${BROWSER} ${GREP_ARG}"
-          echo "Executing command: ${CMD}"
-          eval ${CMD}
+          if ($GrepArg) {
+            $cmd = "npx playwright test --project=$env:BROWSER $GrepArg"
+          } else {
+            $cmd = "npx playwright test --project=$env:BROWSER"
+          }
+
+          Write-Host "Executing command: $cmd"
+          Invoke-Expression $cmd
 
       # ========================================================================
       # 6. FAILED-TEST RERUN GATE
@@ -214,32 +199,26 @@ jobs:
         if: steps.run_playwright_tests.outcome == 'failure'
         continue-on-error: true
         run: |
-          echo "=================================================="
-          echo "🔄 RETRYING FAILED TESTS ONLY (--last-failed)"
-          echo "=================================================="
+          Write-Host "=================================================="
+          Write-Host "🔄 RETRYING FAILED TESTS ONLY (--last-failed)"
+          Write-Host "=================================================="
 
-          GREP_ARG=""
-          case "${SUITE}" in
-            smoke)
-              GREP_ARG='--grep "@Smoke|@smoke"'
-              ;;
-            regression)
-              GREP_ARG='--grep "@Regression|@regression"'
-              ;;
-            targetedRegression)
-              GREP_ARG='--grep "@TargetedRegression|@targeted"'
-              ;;
-            all)
-              GREP_ARG=""
-              ;;
-            *)
-              GREP_ARG=""
-              ;;
-          esac
+          $GrepArg = ""
+          switch ($env:SUITE) {
+            "smoke"              { $GrepArg = '--grep "@Smoke|@smoke"' }
+            "regression"         { $GrepArg = '--grep "@Regression|@regression"' }
+            "targetedRegression" { $GrepArg = '--grep "@TargetedRegression|@targeted"' }
+            default              { $GrepArg = "" }
+          }
 
-          CMD="npx playwright test --last-failed --project=${BROWSER} ${GREP_ARG}"
-          echo "Executing rerun command: ${CMD}"
-          eval ${CMD}
+          if ($GrepArg) {
+            $cmd = "npx playwright test --last-failed --project=$env:BROWSER $GrepArg"
+          } else {
+            $cmd = "npx playwright test --last-failed --project=$env:BROWSER"
+          }
+
+          Write-Host "Executing rerun command: $cmd"
+          Invoke-Expression $cmd
 
       # ========================================================================
       # 7. FINAL STATUS EVALUATION GATE
@@ -247,27 +226,28 @@ jobs:
       - name: Finalize test status
         if: always()
         run: |
-          INITIAL_OUTCOME="${{ steps.run_playwright_tests.outcome }}"
-          RERUN_OUTCOME="${{ steps.rerun_failed_tests.outcome }}"
+          $InitialOutcome = "${{ steps.run_playwright_tests.outcome }}"
+          $RerunOutcome = "${{ steps.rerun_failed_tests.outcome }}"
 
-          echo "=================================================="
-          echo "📊 FINAL TEST STATUS EVALUATION"
-          echo "Initial Run Outcome : ${INITIAL_OUTCOME}"
-          echo "Re-run Outcome     : ${RERUN_OUTCOME:-'N/A (Skipped)'}"
-          echo "=================================================="
+          Write-Host "=================================================="
+          Write-Host "📊 FINAL TEST STATUS EVALUATION"
+          Write-Host "Initial Run Outcome : $InitialOutcome"
+          Write-Host "Re-run Outcome     : $(if ($RerunOutcome) { $RerunOutcome } else { 'N/A (Skipped)' })"
+          Write-Host "=================================================="
 
-          if [ "${INITIAL_OUTCOME}" = "failure" ] && [ "${RERUN_OUTCOME}" = "failure" ]; then
-            echo "❌ CRITICAL: Initial test run AND rerun both failed."
+          if ($InitialOutcome -eq "failure" -and $RerunOutcome -eq "failure") {
+            Write-Host "❌ CRITICAL: Initial test run AND rerun both failed."
             exit 1
-          elif [ "${INITIAL_OUTCOME}" = "failure" ] && [ "${RERUN_OUTCOME}" = "success" ]; then
-            echo "⚠️ WARNING: Initial run failed, but rerun passed all failing tests."
+          } elseif ($InitialOutcome -eq "failure" -and $RerunOutcome -eq "success") {
+            Write-Host "⚠️ WARNING: Initial run failed, but rerun passed all failing tests."
             exit 0
-          elif [ "${INITIAL_OUTCOME}" = "success" ]; then
-            echo "✅ SUCCESS: All tests passed on initial execution."
+          } elseif ($InitialOutcome -eq "success") {
+            Write-Host "✅ SUCCESS: All tests passed on initial execution."
             exit 0
-          else
-            echo "ℹ️ INFO: Workflow completed with initial outcome: ${INITIAL_OUTCOME}"
-          fi
+          } else {
+            Write-Host "ℹ️ INFO: Workflow completed with initial outcome: $InitialOutcome"
+            exit 0
+          }
 
       # ========================================================================
       # 8. ARTIFACTS AND REPORTING
@@ -291,20 +271,21 @@ jobs:
       - name: Publish Test Execution Summary
         if: always()
         run: |
-          INITIAL_OUTCOME="${{ steps.run_playwright_tests.outcome }}"
-          RERUN_OUTCOME="${{ steps.rerun_failed_tests.outcome }}"
+          $InitialOutcome = "${{ steps.run_playwright_tests.outcome }}"
+          $RerunOutcome = "${{ steps.rerun_failed_tests.outcome }}"
+          $SummaryText = @"
+          ### 🎭 Playwright Test Execution Summary
 
-          echo "### 🎭 Playwright Test Execution Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Runner / OS** | \`${{ runner.os }} (${{ github.event.inputs.runner || 'ubuntu-latest' }})\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Environment** | \`${TEST_ENV}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Application** | \`${TEST_APP}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Device** | \`${DEVICE}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Suite** | \`${SUITE}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Browser** | \`${BROWSER}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Initial Run Status** | \`${INITIAL_OUTCOME}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Re-run Status** | \`${RERUN_OUTCOME:-N/A}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📁 **Artifacts:** Check the summary attachments below for detailed HTML reports, JSON results, screenshots, and traces." >> $GITHUB_STEP_SUMMARY
+          | Property | Value |
+          | --- | --- |
+          | **Environment** | `$env:TEST_ENV` |
+          | **Application** | `$env:TEST_APP` |
+          | **Device** | `$env:DEVICE` |
+          | **Suite** | `$env:SUITE` |
+          | **Browser** | `$env:BROWSER` |
+          | **Initial Run Status** | `$InitialOutcome` |
+          | **Re-run Status** | $(if ($RerunOutcome) { "`$RerunOutcome" } else { "N/A" }) |
+
+          📁 **Artifacts:** Check the summary attachments below for detailed HTML reports, JSON results, screenshots, and traces.
+          "@
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $SummaryText
