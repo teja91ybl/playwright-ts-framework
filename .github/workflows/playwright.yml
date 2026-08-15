@@ -150,12 +150,12 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          Write-Host "📦 Installing npm dependencies..."
+          Write-Host "[INFO] Installing npm dependencies..."
           npm ci
 
       - name: Install Playwright Browsers
         run: |
-          Write-Host "🌐 Installing Playwright browser binaries..."
+          Write-Host "[INFO] Installing Playwright browser binaries..."
           npx playwright install
 
       # ========================================================================
@@ -166,7 +166,7 @@ jobs:
         continue-on-error: true
         run: |
           Write-Host "=================================================="
-          Write-Host "🚀 STARTING PLAYWRIGHT TEST RUN"
+          Write-Host "STARTING PLAYWRIGHT TEST RUN"
           Write-Host "Environment : $env:TEST_ENV"
           Write-Host "Application : $env:TEST_APP"
           Write-Host "Device      : $env:DEVICE"
@@ -200,7 +200,7 @@ jobs:
         continue-on-error: true
         run: |
           Write-Host "=================================================="
-          Write-Host "🔄 RETRYING FAILED TESTS ONLY (--last-failed)"
+          Write-Host "RETRYING FAILED TESTS ONLY (--last-failed)"
           Write-Host "=================================================="
 
           $GrepArg = ""
@@ -231,22 +231,22 @@ jobs:
           if (-not $RerunOutcome) { $RerunOutcomeDisplay = "N/A (Skipped)" } else { $RerunOutcomeDisplay = $RerunOutcome }
 
           Write-Host "=================================================="
-          Write-Host "📊 FINAL TEST STATUS EVALUATION"
+          Write-Host "FINAL TEST STATUS EVALUATION"
           Write-Host "Initial Run Outcome : $InitialOutcome"
           Write-Host "Re-run Outcome     : $RerunOutcomeDisplay"
           Write-Host "=================================================="
 
           if ($InitialOutcome -eq "failure" -and $RerunOutcome -eq "failure") {
-            Write-Host "❌ CRITICAL: Initial test run AND rerun both failed."
+            Write-Host "[CRITICAL] Initial test run AND rerun both failed."
             exit 1
           } elseif ($InitialOutcome -eq "failure" -and $RerunOutcome -eq "success") {
-            Write-Host "⚠️ WARNING: Initial run failed, but rerun passed all failing tests."
+            Write-Host "[WARNING] Initial run failed, but rerun passed all failing tests."
             exit 0
           } elseif ($InitialOutcome -eq "success") {
-            Write-Host "✅ SUCCESS: All tests passed on initial execution."
+            Write-Host "[SUCCESS] All tests passed on initial execution."
             exit 0
           } else {
-            Write-Host "ℹ️ INFO: Workflow completed with initial outcome: $InitialOutcome"
+            Write-Host "[INFO] Workflow completed with initial outcome: $InitialOutcome"
             exit 0
           }
 
@@ -277,19 +277,19 @@ jobs:
           if (-not $RerunOutcome) { $RerunOutcomeDisplay = "N/A" } else { $RerunOutcomeDisplay = $RerunOutcome }
 
           $SummaryLines = @(
-            "### 🎭 Playwright Test Execution Summary",
+            "### Playwright Test Execution Summary",
             "",
             "| Property | Value |",
             "| --- | --- |",
-            "| **Environment** | ``$env:TEST_ENV`` |",
-            "| **Application** | ``$env:TEST_APP`` |",
-            "| **Device** | ``$env:DEVICE`` |",
-            "| **Suite** | ``$env:SUITE`` |",
-            "| **Browser** | ``$env:BROWSER`` |",
-            "| **Initial Run Status** | ``$InitialOutcome`` |",
-            "| **Re-run Status** | ``$RerunOutcomeDisplay`` |",
+            "| **Environment** | $env:TEST_ENV |",
+            "| **Application** | $env:TEST_APP |",
+            "| **Device** | $env:DEVICE |",
+            "| **Suite** | $env:SUITE |",
+            "| **Browser** | $env:BROWSER |",
+            "| **Initial Run Status** | $InitialOutcome |",
+            "| **Re-run Status** | $RerunOutcomeDisplay |",
             "",
-            "📁 **Artifacts:** Check the summary attachments below for detailed HTML reports, JSON results, screenshots, and traces."
+            "Artifacts: Check the summary attachments below for detailed HTML reports, JSON results, screenshots, and traces."
           )
           $SummaryText = $SummaryLines -join "`n"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $SummaryText
