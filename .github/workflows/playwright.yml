@@ -76,7 +76,7 @@ jobs:
     # Standard GitHub runners: ubuntu-latest, windows-latest, macos-latest
     # Self-hosted VM runners: [self-hosted, linux, x64, custom-vm-label]
     # ==========================================================================
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64, AsusWin10SelfHosted]
     
     # UPDATE HERE: Adjust overall job timeout limit (in minutes) for long-running suites
     timeout-minutes: 120
