@@ -228,11 +228,12 @@ jobs:
         run: |
           $InitialOutcome = "${{ steps.run_playwright_tests.outcome }}"
           $RerunOutcome = "${{ steps.rerun_failed_tests.outcome }}"
+          if (-not $RerunOutcome) { $RerunOutcomeDisplay = "N/A (Skipped)" } else { $RerunOutcomeDisplay = $RerunOutcome }
 
           Write-Host "=================================================="
           Write-Host "📊 FINAL TEST STATUS EVALUATION"
           Write-Host "Initial Run Outcome : $InitialOutcome"
-          Write-Host "Re-run Outcome     : $(if ($RerunOutcome) { $RerunOutcome } else { 'N/A (Skipped)' })"
+          Write-Host "Re-run Outcome     : $RerunOutcomeDisplay"
           Write-Host "=================================================="
 
           if ($InitialOutcome -eq "failure" -and $RerunOutcome -eq "failure") {
@@ -273,19 +274,22 @@ jobs:
         run: |
           $InitialOutcome = "${{ steps.run_playwright_tests.outcome }}"
           $RerunOutcome = "${{ steps.rerun_failed_tests.outcome }}"
-          $SummaryText = @"
-          ### 🎭 Playwright Test Execution Summary
+          if (-not $RerunOutcome) { $RerunOutcomeDisplay = "N/A" } else { $RerunOutcomeDisplay = $RerunOutcome }
 
-          | Property | Value |
-          | --- | --- |
-          | **Environment** | `$env:TEST_ENV` |
-          | **Application** | `$env:TEST_APP` |
-          | **Device** | `$env:DEVICE` |
-          | **Suite** | `$env:SUITE` |
-          | **Browser** | `$env:BROWSER` |
-          | **Initial Run Status** | `$InitialOutcome` |
-          | **Re-run Status** | $(if ($RerunOutcome) { "`$RerunOutcome" } else { "N/A" }) |
-
-          📁 **Artifacts:** Check the summary attachments below for detailed HTML reports, JSON results, screenshots, and traces.
-          "@
+          $SummaryLines = @(
+            "### 🎭 Playwright Test Execution Summary",
+            "",
+            "| Property | Value |",
+            "| --- | --- |",
+            "| **Environment** | ``$env:TEST_ENV`` |",
+            "| **Application** | ``$env:TEST_APP`` |",
+            "| **Device** | ``$env:DEVICE`` |",
+            "| **Suite** | ``$env:SUITE`` |",
+            "| **Browser** | ``$env:BROWSER`` |",
+            "| **Initial Run Status** | ``$InitialOutcome`` |",
+            "| **Re-run Status** | ``$RerunOutcomeDisplay`` |",
+            "",
+            "📁 **Artifacts:** Check the summary attachments below for detailed HTML reports, JSON results, screenshots, and traces."
+          )
+          $SummaryText = $SummaryLines -join "`n"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $SummaryText
