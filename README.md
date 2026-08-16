@@ -4,6 +4,27 @@ A reusable, cross-platform (Windows / macOS / Linux) Playwright + TypeScript tes
 
 ---
 
+## ⚡ Quick Setup
+
+Get up and running in under 2 minutes:
+
+1. **Clone the repository**:
+   git clone https://github.com/teja91ybl/playwright-ts-framework.git
+   cd playwright-ts-framework
+
+2. **Install dependencies** *(assuming Node.js / npm are already installed)*:
+   npm install
+   npx playwright install
+
+3. **Initialize environment configuration**:
+   cp .env.example .env   # On Windows PowerShell: Copy-Item .env.example .env
+
+4. **Verify framework setup**:
+   npm run verify
+
+5. **Run tests**:
+   npm run test:stage -- --headed DEMO.HelloWorld.spec.ts --grep @Regression
+
 ## 📁 Folder Structure Explanation
 
 ```
