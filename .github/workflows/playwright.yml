@@ -185,7 +185,7 @@ jobs:
           }
 
           if ($GrepArg) {
-            $cmd = "npx playwright test --project=$env:BROWSER $GrepArg"
+            $cmd = "npx playwright test --project=$env:BROWSER $GrepArg --reporter=github"
           } else {
             $cmd = "npx playwright test --project=$env:BROWSER"
           }
@@ -214,9 +214,9 @@ jobs:
           }
 
           if ($GrepArg) {
-            $cmd = "npx playwright test --last-failed --project=$env:BROWSER $GrepArg"
+           $cmd = "npx playwright test --last-failed --project=$env:BROWSER $GrepArg --reporter=github"
           } else {
-            $cmd = "npx playwright test --last-failed --project=$env:BROWSER"
+           $cmd = "npx playwright test --last-failed --project=$env:BROWSER --reporter=github"
           }
 
           Write-Host "Executing rerun command: $cmd"
