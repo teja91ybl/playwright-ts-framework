@@ -39,7 +39,7 @@ on:
       application:
         description: 'Application / System under test'
         required: true
-        default: 'DEMO'
+        default: 'GOOGLE'
         type: string
       device:
         description: 'Device type (desktop/mobile/tablet)'
@@ -100,7 +100,7 @@ jobs:
       # General Environment Configuration
       ENV: ${{ github.event.inputs.environment || 'test' }}
       TEST_ENV: ${{ github.event.inputs.environment || 'test' }}
-      TEST_APP: ${{ github.event.inputs.application || 'DEMO' }}
+      TEST_APP: ${{ github.event.inputs.application || 'GOOGLE' }}
       DEVICE: ${{ github.event.inputs.device || 'desktop' }}
       SUITE: ${{ github.event.inputs.suite || 'smoke' }}
       BROWSER: ${{ github.event.inputs.browser || 'chromium' }}

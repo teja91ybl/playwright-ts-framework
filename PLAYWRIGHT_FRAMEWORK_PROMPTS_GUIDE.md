@@ -13,26 +13,33 @@ Execute these prompts sequentially (Prompt 1 through Prompt 9) in any AI coding 
 ## 🟢 STEP 1: Framework Directory & File Structure Creation
 
 ### **Prompt 1: Create Folder Structure**
-```text
-Create the directory and empty file structure for a reusable, cross-platform Playwright + TypeScript framework in the current project root.
+<prompt>
+<task>Create directory structure and empty placeholder files for a reusable, cross-platform Playwright + TypeScript framework.</task>
 
-Use this exact structure:
+<file_structure>
 config/
   credentials.ts
   environments.ts
   urls.ts
-  constants.ts
 pages/
-  Pages-DEMO/
-    LandingPage_DEMO.page.ts
+  Pages-GOOGLE/
+    LandingPage_GOOGLE.page.ts
+  Pages-APPLE/
+    LandingPage_APPLE.page.ts
 tests/
-  test-DEMO/
-    DEMO.HelloWorld.spec.ts
+  test-GOOGLE/
+    GOOGLE.Validate.spec.ts
+  test-APPLE/
+    APPLE.Validate.spec.ts
 utils/
   logger.ts
   waitUtils.ts
   assertionUtils.ts
   dataUtils.ts
+  reportHistory.ts
+reporters/
+  detailed-reporter.ts
+  auto-heal-reporter.ts
 testData/
   sampleData.json
 results/
@@ -48,256 +55,427 @@ package.json
 tsconfig.json
 playwright.config.ts
 README.md
+</file_structure>
 
-Create empty placeholder files or empty JSON `{}` where applicable, and ensure directory structure is retained with .gitkeep in empty folders.
-```
+<rules>
+- Do NOT create `constants.ts` (configuration types & values are co-located in `urls.ts` and `environments.ts`).
+- Create empty placeholder files or empty JSON `{}` where applicable, and ensure empty directory structure is retained with `.gitkeep` files.
+</rules>
+</prompt>
 
 ---
 
 ## 🟢 STEP 2: Core Configuration Setup
 
 ### **Prompt 2: Root Configuration Files**
-```text
-Generate full content for the root configuration files:
-- package.json
-- tsconfig.json
-- playwright.config.ts
-- .gitignore
+<prompt>
+<task>Generate full content for root configuration files: package.json, tsconfig.json, playwright.config.ts, and .gitignore.</task>
 
-Requirements:
-1. package.json:
-   - devDependencies: @playwright/test, typescript, ts-node, dotenv, cross-env, @types/node.
-   - Scripts using cross-env for cross-platform compatibility:
-     - test: "npx playwright test"
-     - test:headed: "npx playwright test --headed"
-     - test:report: "npx playwright show-report results/playwright-report"
-     - test:trace: "npx playwright show-trace"
-     - test:dev, test:test, test:stage, test:prod
-     - test:dev:smoke, test:test:smoke, test:stage:smoke, test:prod:smoke
-     - test:dev:regression, test:test:regression, test:stage:regression, test:prod:regression
-     - test:dev:targetedRegression, test:test:targetedRegression, test:stage:targetedRegression, test:prod:targetedRegression
-     - verify: "node --experimental-strip-types scripts/verify-framework.ts"
+<requirements>
+<file path="package.json">
+- devDependencies: @playwright/test, typescript, ts-node, dotenv, cross-env, @types/node.
+- Scripts using cross-env for cross-platform compatibility:
+  - test: "npx playwright test"
+  - test:headed: "npx playwright test --headed"
+  - test:report: "npx playwright show-report results/playwright-report"
+  - test:trace: "npx playwright show-trace"
+  - test:dev, test:test, test:stage, test:prod
+  - test:<env>:smoke, test:<env>:regression, test:<env>:targetedRegression
+  - verify: "node --experimental-strip-types scripts/verify-framework.ts"
+</file>
 
-2. tsconfig.json:
-   - Target ES2022, module Node16, moduleResolution node16, strict mode.
-   - Path aliases: @config/*, @pages/*, @utils/*, @testData/*.
+<file path="playwright.config.ts">
+- Google Chrome is default browser (`Desktop Chrome` with `channel: 'chrome'`).
+- `DEVICE` env mapping:
+  - `desktop` -> `Desktop Chrome` (channel: 'chrome')
+  - `mobile` -> `Pixel 5`
+  - `tablet` -> `iPad Pro 11`
+  - Fallback to `Desktop Chrome` if `DEVICE` is missing or invalid.
+- `testDir` logic: If `mobile` or `tablet` -> `./tests/test-IPT-Mobile`; otherwise -> `./tests`.
+- Execution settings: `timeout: 120000`, `expect: { timeout: 20000 }`, `fullyParallel: true`, `retries: 0`, `workers: 1`, `outputDir: 'test-results'`.
+- Reporters: `./reporters/detailed-reporter.ts`, `./reporters/auto-heal-reporter.ts`, `html` ({ open: 'never', outputFolder: 'playwright-report' }), `list`.
+- `use` block:
+  - `headless` driven by `process.env.HEADED === 'true'` (false when HEADED=true, true otherwise).
+  - `trace: 'retain-on-failure'`, `screenshot: 'on'`, `video: 'retain-on-failure'`, `viewport: { width: 1280, height: 720 }`, `ignoreHTTPSErrors: true`, `acceptDownloads: true`.
+  - `launchOptions`: `slowMo: 500` when headed else `0`, args: `--disable-web-security`, `--disable-features=VizDisplayCompositor`, `--no-sandbox`, `--disable-setuid-sandbox`.
+- Calls `dotenv.config()`, sets `process.env.PW_RUN_ID = process.env.PW_RUN_ID || createRunId()`, and calls `prepareReportHistory()`.
+</file>
+</requirements>
 
-3. playwright.config.ts:
-   - Reporters: HTML reporter saving to results/playwright-report (open: 'never'), JSON reporter saving to results/test-results/results.json, and list reporter.
-   - outputDir: 'results/test-results'.
-   - use options: trace: 'retain-on-failure', screenshot: 'only-on-failure', video: 'retain-on-failure'.
-   - Projects: chromium, firefox, webkit.
-   - Environment variable loading via dotenv (.env / .env.[ENV]).
+<code_example file="playwright.config.ts">
+```typescript
+import { defineConfig, devices } from '@playwright/test';
+import dotenv from 'dotenv';
+import { createRunId, prepareReportHistory } from './utils/reportHistory';
 
-4. .gitignore:
-   - Ignore node_modules, results output (preserving .gitkeep files), test-results, playwright-report, .env, and OS junk files.
+dotenv.config();
+
+process.env.PW_RUN_ID = process.env.PW_RUN_ID || createRunId();
+prepareReportHistory();
+
+const deviceType = (process.env.DEVICE || 'desktop').toLowerCase();
+
+let selectedDeviceName: string;
+let selectedDeviceConfig: any;
+let channel: string | undefined;
+
+if (deviceType === 'mobile') {
+  selectedDeviceName = 'Pixel 5';
+  selectedDeviceConfig = devices['Pixel 5'];
+} else if (deviceType === 'tablet') {
+  selectedDeviceName = 'iPad Pro 11';
+  selectedDeviceConfig = devices['iPad Pro 11'] || devices['iPad Pro'];
+} else {
+  selectedDeviceName = 'Desktop Chrome';
+  selectedDeviceConfig = devices['Desktop Chrome'];
+  channel = 'chrome';
+}
+
+if (!selectedDeviceConfig) {
+  selectedDeviceName = 'Desktop Chrome';
+  selectedDeviceConfig = devices['Desktop Chrome'];
+  channel = 'chrome';
+}
+
+const isMobileOrTablet = deviceType === 'mobile' || deviceType === 'tablet';
+const testDir = isMobileOrTablet ? './tests/test-IPT-Mobile' : './tests';
+const isHeaded = process.env.HEADED?.toLowerCase() === 'true';
+
+export default defineConfig({
+  testDir,
+  timeout: 120000,
+  expect: { timeout: 20000 },
+  fullyParallel: true,
+  retries: 0,
+  workers: 1,
+  outputDir: 'test-results',
+  reporter: [
+    ['./reporters/detailed-reporter.ts'],
+    ['./reporters/auto-heal-reporter.ts'],
+    ['html', { open: 'never', outputFolder: 'playwright-report' }],
+    ['list'],
+  ],
+  use: {
+    headless: !isHeaded,
+    trace: 'retain-on-failure',
+    screenshot: 'on',
+    video: 'retain-on-failure',
+    viewport: { width: 1280, height: 720 },
+    ignoreHTTPSErrors: true,
+    acceptDownloads: true,
+    launchOptions: {
+      slowMo: isHeaded ? 500 : 0,
+      args: [
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+      ],
+    },
+  },
+  projects: [
+    {
+      name: selectedDeviceName,
+      use: {
+        ...selectedDeviceConfig,
+        ...(channel ? { channel } : {}),
+      },
+    },
+  ],
+});
 ```
+</code_example>
+</prompt>
 
 ---
 
 ## 🟢 STEP 3: Environment, URLs, and Credentials Management
 
 ### **Prompt 3: Environment Configuration Files**
-```text
-Generate full content for configuration and environment management files:
-- config/constants.ts
-- config/environments.ts
-- config/urls.ts
-- config/credentials.ts
-- .env
-- .env.example
+<prompt>
+<task>Generate config/urls.ts, config/environments.ts, config/credentials.ts, .env, and .env.example without creating a separate constants.ts file.</task>
 
-Requirements:
-1. config/constants.ts: Define types Environment ('dev'|'test'|'stage'|'prod'), Application, DeviceType. Export TEST_ENV (default 'dev'), TEST_APP (default 'DEMO'), DEVICE (default 'desktop') and timeout constants.
-2. config/environments.ts: EnvironmentConfig interface and getEnvironmentConfig() function.
-3. config/urls.ts: URL_MAP object mapping DEMO app environments to stable public URL 'https://playwright.dev'. Implement export function getCurrentEnvironmentURL(app?, env?).
-4. config/credentials.ts: UserCredentials interface. Implement getCurrentCredentials(app?, env?) reading env vars with fallback defaults, and validateCredentials(credentials?).
-5. .env & .env.example: Environment variable key-value pairs for TEST_ENV, TEST_APP, DEVICE, and DEMO credentials.
+<requirements>
+<file path="config/urls.ts">
+- Export types: `Environment = 'dev' | 'test' | 'stage' | 'prod'`, `Application = 'GOOGLE' | 'APPLE' | string`.
+- Export constants: `TEST_ENV` (reads process.env.TEST_ENV || process.env.ENV || 'test'), `TEST_APP` (reads process.env.TEST_APP || 'GOOGLE'), `PLAYWRIGHT_HOME`, `PLAYWRIGHT_DOCS`, `URLs` object for GOOGLE and APPLE app URLs per environment (dev, test, stage, prod).
+- Export functions:
+  - `getEnvironmentURL(env?, app?)`: Safe URL lookup with fallback to default app 'GOOGLE' and default environment 'test'.
+  - `getCurrentEnvironmentURL(app?, env?)`: Resolves URL reading from params or environment variables.
+</file>
+
+<file path="config/environments.ts">
+- Import `dotenv` and call `dotenv.config()`.
+- Export types: `Environment`, `Application`, `DeviceType = 'desktop' | 'mobile' | 'tablet' | string`.
+- Export constants: `TEST_ENV`, `TEST_APP`, `DEVICE` (reads process.env.DEVICE || 'desktop'), `ENVIRONMENTS` configuration mapping timeouts and retries per environment.
+- Export functions: `isValidEnvironment(env?)`, `getEnvironment(env?)`, `getEnvironmentConfig()`.
+</file>
+
+<file path="config/credentials.ts">
+- Import `TEST_ENV` and `TEST_APP` from `./environments`.
+- Export interface: `Credentials` (`username`, `password`, `role`).
+- Export type: `UserCredentials = Credentials`.
+- Export functions:
+  - `getCredentialsByEnvironment(env?, app?)`: Resolves credentials from process.env (`<ENV>_USERNAME`, `<APP>_<ENV>_USERNAME`, etc.) with safe defaults (`test_user` / `Password123!`).
+  - `getCurrentCredentials(app?, env?)`: Wrapper calling `getCredentialsByEnvironment`.
+  - `validateCredentials(creds?, env?)`: Validates non-empty username/password, throwing explicit Error if missing.
+</file>
+</requirements>
+
+<code_example file="config/urls.ts">
+```typescript
+export type Environment = 'dev' | 'test' | 'stage' | 'prod';
+export type Application = 'GOOGLE' | 'APPLE' | string;
+
+export const TEST_ENV: Environment = (process.env.TEST_ENV || process.env.ENV || 'test') as Environment;
+export const TEST_APP: Application = process.env.TEST_APP || 'GOOGLE';
+
+export const URLs = {
+  GOOGLE: {
+    dev: 'https://www.google.com',
+    test: 'https://www.google.com',
+    stage: 'https://www.google.com',
+    prod: 'https://www.google.com',
+  },
+  APPLE: {
+    dev: 'https://www.apple.com',
+    test: 'https://www.apple.com',
+    stage: 'https://www.apple.com',
+    prod: 'https://www.apple.com',
+  },
+} as const;
+
+export function getEnvironmentURL(env: string = 'test', app: string = 'GOOGLE'): string {
+  const targetAppKey = (Object.keys(URLs).find((k) => k.toLowerCase() === app.toLowerCase()) || 'GOOGLE') as keyof typeof URLs;
+  const appUrls = URLs[targetAppKey];
+  const targetEnvKey = (Object.keys(appUrls).find((k) => k.toLowerCase() === env.toLowerCase()) || 'test') as keyof typeof appUrls;
+  return appUrls[targetEnvKey];
+}
+
+export function getCurrentEnvironmentURL(app?: string, env?: string): string {
+  return getEnvironmentURL(env || process.env.TEST_ENV || TEST_ENV, app || process.env.TEST_APP || TEST_APP);
+}
 ```
+</code_example>
+</prompt>
 
 ---
 
-## 🟢 STEP 4: Helper Utilities & Test Data
+## 🟢 STEP 4: Helper Utilities, Reporters, & Test Data
 
-### **Prompt 4: Reusable Utilities**
-```text
-Generate full content for helper utilities and test data:
-- utils/logger.ts
-- utils/waitUtils.ts
-- utils/assertionUtils.ts
-- utils/dataUtils.ts
-- testData/sampleData.json
+### **Prompt 4: Reusable Utilities & Custom Reporters**
+<prompt>
+<task>Generate helper utilities, custom Playwright reporters, and sample test data.</task>
 
-Requirements:
-1. utils/logger.ts: Static Logger class with info(), warn(), error(), debug(), and step() methods with formatted timestamp ISO logs.
-2. utils/waitUtils.ts: Static WaitUtils class with hardWait(), waitForElementVisible(), waitForElementHidden(), and waitForPageLoad().
-3. utils/assertionUtils.ts: Static AssertionUtils class wrapping Playwright expect for visibility, text matching, URL matching, and title assertions.
-4. utils/dataUtils.ts: Static DataUtils class with type-safe readJson<T>(filePath), getRandomString(length), and getRandomEmail(prefix).
-5. testData/sampleData.json: Sample JSON containing demoUser object, searchKeywords array, and testOptions.
-```
+<requirements>
+- `utils/logger.ts`: Static Logger class (`info`, `warn`, `error`, `debug`, `step`) formatting ISO timestamp logs.
+- `utils/waitUtils.ts`: Static WaitUtils class (`hardWait`, `waitForElementVisible`, `waitForElementHidden`, `waitForPageLoad`).
+- `utils/assertionUtils.ts`: Static AssertionUtils class wrapping Playwright expect for visibility, text, URL, and title assertions.
+- `utils/dataUtils.ts`: Static DataUtils class (`readJson<T>`, `getRandomString`, `getRandomEmail`).
+- `utils/reportHistory.ts`: Export `createRunId(): string` and `prepareReportHistory(): void`.
+- `reporters/detailed-reporter.ts`: Custom Playwright reporter logging test run begin, end, and status.
+- `reporters/auto-heal-reporter.ts`: Custom Playwright reporter logging failure auto-heal details.
+- `testData/sampleData.json`: Sample JSON data file.
+</requirements>
+</prompt>
 
 ---
 
-## 🟢 STEP 5: Page Objects & Sample Test Creation
+## 🟢 STEP 5: Page Objects & Spec Creation
 
-### **Prompt 5: Page Objects & Spec Creation**
-```text
-Generate full content for Page Object Model and sample test spec:
-- pages/Pages-DEMO/LandingPage_DEMO.page.ts
-- tests/test-DEMO/DEMO.HelloWorld.spec.ts
+### **Prompt 5: Page Objects & Validation Specs**
+<prompt>
+<task>Generate Page Object classes and test spec files for GOOGLE and APPLE applications using the standardized 3-test pattern.</task>
 
-Requirements:
-1. pages/Pages-DEMO/LandingPage_DEMO.page.ts:
-   - LandingPage_DEMO class accepting Playwright Page.
-   - Locators: mainHeading (page.locator('h1').first()).
-   - Methods: navigate() using getCurrentEnvironmentURL(), getTitle(), getMainHeadingText().
+<requirements>
+<pattern name="Page Object Model">
+- Class accepts Playwright `Page`.
+- Define readonly locators in constructor (`searchInput`, `header` / `globalNav`).
+- Methods:
+  - `navigate()`: Navigates using `getCurrentEnvironmentURL('{APP}')` with `{ waitUntil: 'domcontentloaded' }`.
+  - `getTitle()`: Returns `page.title()`.
+  - `isHeaderVisible()`: Returns boolean indicating header locator visibility.
+  - `validateLandingPageApis()`: Listens to network response events for `fetch`/`xhr`/`document` during page navigation/load, returning `{ total, failed, responses }`.
+</pattern>
 
-2. tests/test-DEMO/DEMO.HelloWorld.spec.ts:
-   - Test suite using Playwright test runner and LandingPage_DEMO.
-   - Test title with tags: "Hello World Navigation Test @Smoke @Regression @TargetedRegression".
-   - Steps: Navigate using landingPage.navigate(), assert page title contains 'playwright' (case-insensitive), assert mainHeading is visible and text is non-empty.
-   - Keep test simple, robust, and runnable immediately without external dependencies.
+<pattern name="Test Specs">
+- Use `test.beforeEach` to initialize the Page Object instance (`pageObject = new LandingPage_{APP}(page)`).
+- Implement exactly 3 standardized tests per app tagged with `@Smoke @Regression @TargetedRegression`:
+  1. **Test 1 (URL & Title)**: Navigates to app, asserts `page.url()` contains expected domain, and asserts title is non-empty and contains app name.
+  2. **Test 2 (Header Correctness)**: Navigates to app, calls `isHeaderVisible()`, and asserts `expect(pageObject.header).toBeVisible()`.
+  3. **Test 3 (API Responses)**: Calls `validateLandingPageApis()`, asserts `failed === 0`, `total > 0`, and all status codes are `< 400`.
+</pattern>
+</requirements>
+
+<code_example file="pages/Pages-GOOGLE/LandingPage_GOOGLE.page.ts">
+```typescript
+import { Page, Locator } from '@playwright/test';
+import { getCurrentEnvironmentURL } from '../../config/urls';
+
+export class LandingPage_GOOGLE {
+  readonly page: Page;
+  readonly searchInput: Locator;
+  readonly header: Locator;
+
+  constructor(page: Page) {
+    this.page = page;
+    this.searchInput = page.locator('textarea[name="q"], input[name="q"]').first();
+    this.header = page.locator('header, #gb, form[action="/search"], body').first();
+  }
+
+  async navigate(): Promise<void> {
+    const url = getCurrentEnvironmentURL('GOOGLE');
+    await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+  }
+
+  async getTitle(): Promise<string> {
+    return await this.page.title();
+  }
+
+  async isHeaderVisible(): Promise<boolean> {
+    return await this.header.isVisible();
+  }
+
+  async validateLandingPageApis(): Promise<{ total: number; failed: number; responses: Array<{ url: string; status: number }> }> {
+    const apiResponses: Array<{ url: string; status: number }> = [];
+    const failedResponses: Array<{ url: string; status: number }> = [];
+
+    const responseHandler = (response: any) => {
+      const status = response.status();
+      const url = response.url();
+      const resourceType = response.request().resourceType();
+
+      if (resourceType === 'fetch' || resourceType === 'xhr' || resourceType === 'document') {
+        apiResponses.push({ url, status });
+        if (status >= 400) {
+          failedResponses.push({ url, status });
+        }
+      }
+    };
+
+    this.page.on('response', responseHandler);
+    await this.navigate();
+    await this.page.waitForLoadState('domcontentloaded');
+    this.page.off('response', responseHandler);
+
+    return { total: apiResponses.length, failed: failedResponses.length, responses: apiResponses };
+  }
+}
 ```
+</code_example>
+
+<code_example file="tests/test-GOOGLE/GOOGLE.Validate.spec.ts">
+```typescript
+import { test, expect } from '@playwright/test';
+import { LandingPage_GOOGLE } from '../../pages/Pages-GOOGLE/LandingPage_GOOGLE.page';
+
+test.describe('GOOGLE Application Verification', () => {
+  let googlePage: LandingPage_GOOGLE;
+
+  test.beforeEach(async ({ page }) => {
+    googlePage = new LandingPage_GOOGLE(page);
+  });
+
+  test('1. Validate www.google.com opens as expected and check title @Smoke @Regression @TargetedRegression', async ({ page }) => {
+    await googlePage.navigate();
+    expect(page.url()).toContain('google.com');
+
+    const title = await googlePage.getTitle();
+    expect(title).toBeTruthy();
+    expect(title.toLowerCase()).toContain('google');
+  });
+
+  test('2. Validate landing page header is correct and visible @Smoke @Regression @TargetedRegression', async () => {
+    await googlePage.navigate();
+    const isHeaderVisible = await googlePage.isHeaderVisible();
+    expect(isHeaderVisible).toBe(true);
+    await expect(googlePage.header).toBeVisible();
+  });
+
+  test('3. Check all landing page APIs return 200/successful response @Smoke @Regression @TargetedRegression', async () => {
+    const apiResult = await googlePage.validateLandingPageApis();
+    expect(apiResult.failed).toBe(0);
+    expect(apiResult.total).toBeGreaterThan(0);
+    apiResult.responses.forEach((res) => {
+      expect(res.status).toBeLessThan(400);
+    });
+  });
+});
+```
+</code_example>
+</prompt>
 
 ---
 
 ## 🟢 STEP 6: Framework Folder & Self-Verification Script
 
 ### **Prompt 6: Create Verification Script**
-```text
-Generate full content for scripts/verify-framework.ts:
+<prompt>
+<task>Generate full content for scripts/verify-framework.ts.</task>
 
-Requirements:
-1. Script that inspects and validates the existence of all 21 required framework files and folders:
-   - config/credentials.ts, config/environments.ts, config/urls.ts, config/constants.ts
-   - pages/Pages-DEMO/LandingPage_DEMO.page.ts
-   - tests/test-DEMO/DEMO.HelloWorld.spec.ts
-   - utils/logger.ts, utils/waitUtils.ts, utils/assertionUtils.ts, utils/dataUtils.ts
-   - testData/sampleData.json
-   - results/test-results, results/playwright-report, results/artifacts
-   - .env, .env.example, .gitignore, package.json, tsconfig.json, playwright.config.ts, README.md
-2. Logs formatted status `[OK]` for found items or `[FAIL]` for missing items.
-3. Outputs Node.js version and exits with status code 0 if all files exist, or status code 1 if any file is missing.
-```
+<requirements>
+- Inspect and validate existence of required framework files and folders:
+  - `config/credentials.ts`, `config/environments.ts`, `config/urls.ts`
+  - `pages/Pages-GOOGLE/LandingPage_GOOGLE.page.ts`, `pages/Pages-APPLE/LandingPage_APPLE.page.ts`
+  - `tests/test-GOOGLE/GOOGLE.Validate.spec.ts`, `tests/test-APPLE/APPLE.Validate.spec.ts`
+  - `utils/logger.ts`, `utils/waitUtils.ts`, `utils/assertionUtils.ts`, `utils/dataUtils.ts`
+  - `testData/sampleData.json`
+  - `results/test-results`, `results/playwright-report`, `results/artifacts`
+  - `.env`, `.env.example`, `.gitignore`, `package.json`, `tsconfig.json`, `playwright.config.ts`, `README.md`
+- Log formatted status `[OK]` for found items or `[FAIL]` for missing items.
+- Output Node.js version and exit with status code `0` if all files exist, or status code `1` if any file is missing.
+</requirements>
+</prompt>
 
 ---
 
 ## 🟢 STEP 7: Test Execution & Validation
 
 ### **Prompt 7: Execute & Verify Test Runs**
-```text
-Validate the framework setup and run sample tests across all browsers:
+<prompt>
+<task>Validate the framework setup and run tests on default Google Chrome browser.</task>
 
-Execute the following commands in order and verify output:
+<commands>
 1. Run framework verification script:
    `npm run verify`
-2. List all discovered tests to ensure Playwright picks up the sample spec:
+2. List all discovered tests to ensure Playwright picks up spec files:
    `npx playwright test --list`
-3. Execute sample tests across all configured projects (chromium, firefox, webkit):
-   `npx playwright test tests/test-DEMO/DEMO.HelloWorld.spec.ts`
+3. Execute test suite on Google Chrome:
+   `npm run test`
 4. Confirm test completion, assert zero failures, and verify reports generated in `results/playwright-report` and `results/test-results`.
-```
+</commands>
+</prompt>
 
 ---
 
 ## 🟢 STEP 8: Documentation & README Setup
 
 ### **Prompt 8: Comprehensive Documentation**
-```text
-Generate full content for README.md:
+<prompt>
+<task>Generate full content for README.md.</task>
 
-Requirements:
-1. Setup instructions from zero (Node.js, npm install, npx playwright install).
-2. How to run tests by environment (dev/test/stage/prod), by tags (@smoke/@regression), and by browser.
-3. Complete folder structure diagram and explanation.
-4. Windows PATH and PowerShell ExecutionPolicy troubleshooting section.
-5. Verification checklist with exact commands:
-   - npm run verify
-   - npx playwright test --list
-   - npx playwright test tests/test-DEMO/DEMO.HelloWorld.spec.ts
-```
+<requirements>
+1. Setup instructions from scratch (Node.js, npm install, npx playwright install).
+2. Command guide for running tests by environment (`dev`/`test`/`stage`/`prod`), by tags (`@smoke`/`@regression`/`@targetedRegression`), and by browser/device.
+3. Folder structure diagram and explanation of configuration files.
+4. Troubleshooting guide for Windows PowerShell ExecutionPolicy and PATH setup.
+5. Verification checklist with exact commands (`npm run verify`, `npx playwright test --list`, `npm run test`).
+</requirements>
+</prompt>
 
 ---
 
 ## 🟢 STEP 9: CI/CD GitHub Actions Workflow Setup
 
 ### **Prompt 9: Create GitHub Actions Workflow**
-```text
-You are a DevOps + QA automation engineer. Create a production-ready GitHub Actions workflow for a generic Playwright + TypeScript framework supporting both GitHub Cloud runners and Windows Self-Hosted runners.
+<prompt>
+<task>Create a production-ready GitHub Actions workflow (.github/workflows/playwright.yml) supporting GitHub Cloud & Windows Self-Hosted runners.</task>
 
-Generate `.github/workflows/playwright.yml` with the following requirements:
-
-1) Triggers
-- workflow_dispatch with inputs:
-  - runner: self-hosted/windows-latest/ubuntu-latest/macos-latest (default: self-hosted)
-  - environment: dev/test/stage/prod (default: test)
-  - application: DEMO (default: DEMO)
-  - device: desktop/mobile/tablet (default: desktop)
-  - suite: smoke/regression/targetedRegression/all (default: smoke)
-  - browser: chromium/firefox/webkit (default: chromium)
-- pull_request on main
-- push on main
-
-2) Job & Runner Setup
-- Dynamic runner selection: `runs-on: ${{ github.event.inputs.runner || 'self-hosted' }}`
-- Supports Windows Self-Hosted Machine (e.g. offline agent DESKTOP-1HQ5J38) and GitHub Cloud runners
-- Shell: `defaults.run.shell: powershell` for cross-platform Windows/PowerShell compatibility
-- Clean ASCII logging (no non-ASCII emojis in script blocks to prevent Windows ANSI codepage string terminator/parser errors)
-- timeout-minutes: 120
-- concurrency group to cancel in-progress runs for same branch
-- checkout repository
-- setup-node (Node 24)
-- npm ci
-- install Playwright browsers (`npx playwright install`)
-- cache node_modules and Playwright browser cache (`~\AppData\Local\ms-playwright`)
-
-3) Environment handling & Machine Tracking
-- Export TEST_ENV, TEST_APP, DEVICE from workflow inputs
-- Automatically detect and print Virtual Machine / Runner Name (`${{ runner.name }}`, `$env:COMPUTERNAME` / `$env:HOSTNAME`), OS (`${{ runner.os }}`), and Architecture (`${{ runner.arch }}`) in console execution headers and Step Summaries
-- Load secrets as env vars:
-  - DEV_USERNAME/DEV_PASSWORD
-  - TEST_USERNAME/TEST_PASSWORD
-  - STAGE_USERNAME/STAGE_PASSWORD
-  - PROD_USERNAME/PROD_PASSWORD
-
-4) Test execution
-- Step id: run_playwright_tests
-- Run suite by input via PowerShell switch ($env:SUITE):
-  - smoke => --grep "@Smoke|@smoke"
-  - regression => --grep "@Regression|@regression"
-  - targetedRegression => --grep "@TargetedRegression|@targeted"
-  - all => no grep filter
-- Support browser project selection via --project=$env:BROWSER
-- continue-on-error: true for first run
-
-5) Failed-test rerun
-- Step name: Re-run failed Playwright tests
-- id: rerun_failed_tests
-- if: steps.run_playwright_tests.outcome == 'failure'
-- run: `npx playwright test --last-failed` with same env/app/device/project
-- continue-on-error: true
-
-6) Final status gate
-- Step: Finalize test status
-- Fail job only if initial run failed AND rerun failed
-- Pass job if rerun succeeds
-
-7) Artifacts and reports
-- Always upload:
-  - results/test-results
-  - results/playwright-report
-- Retention: 14 days
-- Add summary to GitHub Step Summary table with:
-  - Execution Machine / VM name and host
-  - OS / Architecture
-  - env/app/device/suite/browser
-  - initial outcome
-  - rerun outcome
-
-8) Quality and reliability
-- Use `if: always()` for artifact upload
-- Pure ASCII text in PowerShell scripts to guarantee error-free parsing on Windows self-hosted runners
-- Clear log echoes for each stage
-- No hardcoded app URLs or credentials in YAML
-- Keep workflow generic and reusable for any app
-```
+<requirements>
+1) Triggers: `workflow_dispatch` (inputs: `runner`, `environment`, `application`, `device`, `suite`, `browser`), `pull_request`, `push` on `main`.
+2) Job & Runner: Dynamic selection (`runs-on: ${{ github.event.inputs.runner || 'self-hosted' }}`), `defaults.run.shell: powershell`, clean ASCII logging, timeout-minutes 120, setup Node 24, npm ci, cache browser binaries.
+3) Machine & Environment Tracking: Export `TEST_ENV`, `TEST_APP`, `DEVICE`, print Virtual Machine / Runner Name, OS, and Architecture in console execution headers and Step Summaries.
+4) Execution & Rerun: Filter suite by `--grep`, support `--project=$env:BROWSER`, re-run failed tests with `--last-failed`.
+5) Artifacts: Always upload `results/test-results` and `results/playwright-report` (14 days retention).
+</requirements>
+</prompt>

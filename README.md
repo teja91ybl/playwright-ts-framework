@@ -23,7 +23,7 @@ Get up and running in under 2 minutes:
    npm run verify
 
 5. **Run tests**:
-   npm run test:stage -- --headed DEMO.HelloWorld.spec.ts --grep @Regression
+   npm run test:stage -- --headed GOOGLE.Validate.spec.ts --grep @Regression
 
 ## 📁 Folder Structure Explanation
 
@@ -34,11 +34,15 @@ Get up and running in under 2 minutes:
 │   ├── environments.ts      # Active environment configuration helper
 │   └── urls.ts              # URL mappings per app/environment
 ├── pages/                   # Page Object Model (POM) classes
-│   └── Pages-DEMO/
-│       └── LandingPage_DEMO.page.ts # Demo Landing Page Object
+│   ├── Pages-GOOGLE/
+│   │   └── LandingPage_GOOGLE.page.ts # Google Landing Page Object
+│   └── Pages-APPLE/
+│       └── LandingPage_APPLE.page.ts  # Apple Landing Page Object
 ├── tests/                   # Automated test specs
-│   └── test-DEMO/
-│       └── DEMO.HelloWorld.spec.ts  # Demo verification test spec
+│   ├── test-GOOGLE/
+│   │   └── GOOGLE.Validate.spec.ts   # Google verification test spec
+│   └── test-APPLE/
+│       └── APPLE.Validate.spec.ts    # Apple verification test spec
 ├── utils/                   # Framework helper utilities
 │   ├── assertionUtils.ts    # Reusable Playwright assertions
 │   ├── dataUtils.ts         # Data generators and JSON file reader
@@ -209,7 +213,7 @@ Run these commands to verify the framework is fully configured and operational:
    npx playwright test --list
    ```
 
-3. **Execute the demo test suite**:
+3. **Execute the test suite**:
    ```bash
-   npx playwright test tests/test-DEMO/DEMO.HelloWorld.spec.ts
+   npx playwright test tests/test-GOOGLE/GOOGLE.Validate.spec.ts
    ```
