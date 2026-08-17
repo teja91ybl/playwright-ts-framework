@@ -712,18 +712,24 @@ jobs:
             }
           "
 
-      - name: Upload Test Artifacts
+      - name: Upload Playwright HTML Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-html-report
+          path: playwright-report
+          retention-days: 14
+
+      - name: Upload Test Results Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-test-results
-          path: |
-            playwright-report
-            test-results
+          path: test-results
           retention-days: 14
 
       # Deploy report directly to GitHub Pages (gh-pages branch)
-      - name: Deploy Playwright Report to GitHub Pages
+      - name: Deploy Playwright Report to GitHub Pages (Branch)
         if: always()
         uses: peaceiris/actions-gh-pages@v4
         continue-on-error: true
@@ -770,6 +776,74 @@ jobs:
 
             fs.appendFileSync(summaryFile, markdown + '\n');
           "
+
+  # Dedicated deployment job for GitHub Pages (Source: GitHub Actions)
+  deploy-report:
+    name: Deploy Playwright HTML Report
+    needs: playwright-tests
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
+    steps:
+      - name: Download Playwright HTML Report
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: playwright-html-report
+          path: playwright-report
+
+      - name: Verify Report File Exists
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            console.log('Inspecting downloaded report folder:');
+            if (fs.existsSync('playwright-report')) {
+              console.log('Files:', fs.readdirSync('playwright-report'));
+              const indexPath = path.join('playwright-report', 'index.html');
+              if (fs.existsSync(indexPath)) {
+                const stat = fs.statSync(indexPath);
+                console.log('Verified index.html size:', stat.size, 'bytes');
+              }
+            }
+          "
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+        continue-on-error: true
+
+      - name: Upload Playwright HTML Report to GitHub Pages
+        id: upload_pages
+        uses: actions/upload-pages-artifact@v3
+        continue-on-error: true
+        with:
+          path: playwright-report
+
+      - name: Deploy Playwright Report to GitHub Pages
+        id: deployment
+        if: steps.upload_pages.outcome == 'success'
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+
+      - name: Publish Live Report Link to Summary
+        if: always()
+        run: |
+          PAGE_URL="${{ steps.deployment.outputs.page_url }}"
+          if [ -z "$PAGE_URL" ]; then
+            PAGE_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+          fi
+          echo "### Live Playwright Test Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Report URL: $PAGE_URL" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[Click here to open Playwright Report in Browser]($PAGE_URL)" >> $GITHUB_STEP_SUMMARY
 ```
 </code_example>
 </prompt>
