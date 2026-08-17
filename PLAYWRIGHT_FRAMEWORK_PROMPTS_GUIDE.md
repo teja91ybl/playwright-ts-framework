@@ -699,22 +699,24 @@ jobs:
           "
 
       # ========================================================================
-      # 8. ARTIFACTS AND REPORTING
+      # 8. ARTIFACTS AND DEPLOYMENT
       # ========================================================================
-      # UPDATE HERE: Customize retention days or artifact paths if needed.
-      # Default paths: playwright-report, test-results, results
-      # ========================================================================
-      - name: Upload Test Artifacts and Reports
+      - name: Upload Test Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-test-results-${{ github.run_id }}
+          name: playwright-test-results
           path: |
             playwright-report
             test-results
-            results/playwright-report
-            results/test-results
           retention-days: 14
+
+      # Deploy report directly to GitHub Pages (gh-pages branch via direct git push)
+      - name: Deploy Playwright Report to GitHub Pages
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/deploy-report.js
 
       # ========================================================================
       # 9. GITHUB STEP SUMMARY GENERATION (CROSS-PLATFORM)
@@ -755,69 +757,6 @@ jobs:
 
             fs.appendFileSync(summaryFile, markdown + '\n');
           "
-
-  # ============================================================================
-  # DEDICATED GITHUB PAGES DEPLOYMENT JOB (Source: GitHub Actions)
-  # ============================================================================
-  deploy-report:
-    name: Deploy Playwright HTML Report
-    needs: playwright-tests
-    if: always()
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    env:
-      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
-    steps:
-      - name: Download Playwright Report Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: playwright-test-results-${{ github.run_id }}
-          path: playwright-artifacts
-
-      - name: Prepare Report Directory
-        shell: bash
-        run: |
-          mkdir -p playwright-report
-          if [ -d "playwright-artifacts/playwright-report" ]; then
-            cp -r playwright-artifacts/playwright-report/* playwright-report/
-          elif [ -d "playwright-artifacts" ]; then
-            cp -r playwright-artifacts/* playwright-report/
-          fi
-
-      - name: Setup GitHub Pages
-        uses: actions/configure-pages@v5
-        continue-on-error: true
-
-      - name: Upload Playwright HTML Report to GitHub Pages
-        id: upload_pages
-        uses: actions/upload-pages-artifact@v3
-        continue-on-error: true
-        with:
-          path: playwright-report
-
-      - name: Deploy Playwright Report to GitHub Pages
-        id: deployment
-        if: steps.upload_pages.outcome == 'success'
-        uses: actions/deploy-pages@v4
-        continue-on-error: true
-
-      - name: Publish Live Report Link to Summary
-        if: always()
-        run: |
-          PAGE_URL="${{ steps.deployment.outputs.page_url }}"
-          if [ -z "$PAGE_URL" ]; then
-            PAGE_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
-          fi
-          echo "### Live Playwright Test Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Report URL: $PAGE_URL" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "[Click here to open Playwright Report in Browser]($PAGE_URL)" >> $GITHUB_STEP_SUMMARY
 ```
 </code_example>
 </prompt>
