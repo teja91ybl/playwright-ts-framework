@@ -113,7 +113,7 @@ jobs:
       DEVICE: ${{ github.event.inputs.device || 'desktop' }}
       SUITE: ${{ github.event.inputs.suite || 'smoke' }}
       BROWSER: ${{ github.event.inputs.browser || 'chromium' }}
-      CI: true
+      CI: 'true'
 
       # Environment Credentials (Injected securely from Repository Secrets)
       # UPDATE HERE: Add, remove, or rename these secrets to match your system secrets
@@ -126,10 +126,6 @@ jobs:
       PROD_USERNAME: ${{ secrets.PROD_USERNAME }}
       PROD_PASSWORD: ${{ secrets.PROD_PASSWORD }}
 
-    defaults:
-      run:
-        shell: powershell
-
     steps:
       # Step 1: Check out the repository source code
       - name: Checkout Source Code
@@ -138,117 +134,107 @@ jobs:
       # ========================================================================
       # 4. SYSTEM & DEPENDENCY SETUP
       # ========================================================================
-      # UPDATE HERE: Modify Node version if your project requires a specific runtime.
-      # ========================================================================
       - name: Setup Node.js (v24)
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: '24'
 
       - name: Install Dependencies
-        run: |
-          Write-Host "[INFO] Installing npm dependencies..."
-          npm ci
+        run: npm ci
 
       - name: Install Playwright Browsers
         run: |
-          Write-Host "[INFO] Installing Playwright browser binaries..."
           npx playwright install --with-deps
           npx playwright install chrome
 
       # ========================================================================
-      # 5. INITIAL TEST EXECUTION
+      # 5. INITIAL TEST EXECUTION (CROSS-PLATFORM RUNNER)
       # ========================================================================
       - name: Run Playwright Tests
         id: run_playwright_tests
         continue-on-error: true
         run: |
-          Write-Host "=================================================="
-          Write-Host "STARTING PLAYWRIGHT TEST RUN"
-          Write-Host "Machine Name: ${{ runner.name }} ($env:COMPUTERNAME)"
-          Write-Host "OS / Arch   : ${{ runner.os }} (${{ runner.arch }})"
-          Write-Host "Environment : $env:TEST_ENV"
-          Write-Host "Application : $env:TEST_APP"
-          Write-Host "Device      : $env:DEVICE"
-          Write-Host "Browser     : $env:BROWSER"
-          Write-Host "Suite       : $env:SUITE"
-          Write-Host "=================================================="
+          node -e "
+            const { spawnSync } = require('child_process');
+            const os = require('os');
+            console.log('==================================================');
+            console.log('STARTING PLAYWRIGHT TEST RUN');
+            console.log('Machine Name:', '${{ runner.name }} (' + os.hostname() + ')');
+            console.log('OS / Arch   :', '${{ runner.os }} (${{ runner.arch }})');
+            console.log('Environment :', process.env.TEST_ENV || 'test');
+            console.log('Application :', process.env.TEST_APP || 'GOOGLE');
+            console.log('Device      :', process.env.DEVICE || 'desktop');
+            console.log('Browser     :', process.env.BROWSER || 'chromium');
+            console.log('Suite       :', process.env.SUITE || 'smoke');
+            console.log('==================================================');
 
-          $GrepArg = ""
-          switch ($env:SUITE) {
-            "smoke"              { $GrepArg = '--grep "@Smoke|@smoke"' }
-            "regression"         { $GrepArg = '--grep "@Regression|@regression"' }
-            "targetedRegression" { $GrepArg = '--grep "@TargetedRegression|@targeted"' }
-            default              { $GrepArg = "" }
-          }
+            const suite = (process.env.SUITE || 'smoke').toLowerCase();
+            const browser = process.env.BROWSER || 'chromium';
+            let grep = '';
+            if (suite === 'smoke') grep = '@Smoke|@smoke';
+            else if (suite === 'regression') grep = '@Regression|@regression';
+            else if (suite === 'targetedregression') grep = '@TargetedRegression|@targeted';
 
-          if ($GrepArg) {
-            $cmd = "npx playwright test --project=$env:BROWSER $GrepArg"
-          } else {
-            $cmd = "npx playwright test --project=$env:BROWSER"
-          }
+            const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+            const args = ['playwright', 'test', '--project=' + browser];
+            if (grep) args.push('--grep', grep);
 
-          Write-Host "Executing command: $cmd"
-          Invoke-Expression $cmd
+            console.log('Executing:', npxCmd, args.join(' '));
+            const res = spawnSync(npxCmd, args, { stdio: 'inherit', shell: false });
+            process.exit(res.status || 0);
+          "
 
       # ========================================================================
-      # 6. FAILED-TEST RERUN GATE
+      # 6. FAILED-TEST RERUN GATE (CROSS-PLATFORM)
       # ========================================================================
       - name: Re-run failed Playwright tests
         id: rerun_failed_tests
         if: steps.run_playwright_tests.outcome == 'failure'
         continue-on-error: true
         run: |
-          Write-Host "=================================================="
-          Write-Host "RETRYING FAILED TESTS ONLY (--last-failed)"
-          Write-Host "=================================================="
+          node -e "
+            const { spawnSync } = require('child_process');
+            console.log('==================================================');
+            console.log('RETRYING FAILED TESTS ONLY (--last-failed)');
+            console.log('==================================================');
+            const browser = process.env.BROWSER || 'chromium';
+            const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+            const args = ['playwright', 'test', '--last-failed', '--project=' + browser];
 
-          $GrepArg = ""
-          switch ($env:SUITE) {
-            "smoke"              { $GrepArg = '--grep "@Smoke|@smoke"' }
-            "regression"         { $GrepArg = '--grep "@Regression|@regression"' }
-            "targetedRegression" { $GrepArg = '--grep "@TargetedRegression|@targeted"' }
-            default              { $GrepArg = "" }
-          }
-
-          if ($GrepArg) {
-           $cmd = "npx playwright test --last-failed --project=$env:BROWSER $GrepArg"
-          } else {
-           $cmd = "npx playwright test --last-failed --project=$env:BROWSER"
-          }
-
-          Write-Host "Executing rerun command: $cmd"
-          Invoke-Expression $cmd
+            console.log('Executing rerun:', npxCmd, args.join(' '));
+            const res = spawnSync(npxCmd, args, { stdio: 'inherit', shell: false });
+            process.exit(res.status || 0);
+          "
 
       # ========================================================================
-      # 7. FINAL STATUS EVALUATION GATE
+      # 7. FINAL STATUS EVALUATION GATE (CROSS-PLATFORM)
       # ========================================================================
       - name: Finalize test status
         if: always()
         run: |
-          $InitialOutcome = "${{ steps.run_playwright_tests.outcome }}"
-          $RerunOutcome = "${{ steps.rerun_failed_tests.outcome }}"
-          if (-not $RerunOutcome) { $RerunOutcomeDisplay = "N/A (Skipped)" } else { $RerunOutcomeDisplay = $RerunOutcome }
+          node -e "
+            const initial = '${{ steps.run_playwright_tests.outcome }}';
+            const rerun = '${{ steps.rerun_failed_tests.outcome }}';
+            console.log('==================================================');
+            console.log('FINAL TEST STATUS EVALUATION');
+            console.log('Initial Run Outcome :', initial);
+            console.log('Re-run Outcome     :', rerun || 'N/A (Skipped)');
+            console.log('==================================================');
 
-          Write-Host "=================================================="
-          Write-Host "FINAL TEST STATUS EVALUATION"
-          Write-Host "Initial Run Outcome : $InitialOutcome"
-          Write-Host "Re-run Outcome     : $RerunOutcomeDisplay"
-          Write-Host "=================================================="
-
-          if ($InitialOutcome -eq "failure" -and $RerunOutcome -eq "failure") {
-            Write-Host "[CRITICAL] Initial test run AND rerun both failed."
-            exit 1
-          } elseif ($InitialOutcome -eq "failure" -and $RerunOutcome -eq "success") {
-            Write-Host "[WARNING] Initial run failed, but rerun passed all failing tests."
-            exit 0
-          } elseif ($InitialOutcome -eq "success") {
-            Write-Host "[SUCCESS] All tests passed on initial execution."
-            exit 0
-          } else {
-            Write-Host "[INFO] Workflow completed with initial outcome: $InitialOutcome"
-            exit 0
-          }
+            if (initial === 'failure' && rerun === 'failure') {
+              console.error('[CRITICAL] Initial test run AND rerun both failed.');
+              process.exit(1);
+            } else if (initial === 'failure' && rerun === 'success') {
+              console.log('[WARNING] Initial run failed, but rerun passed all failing tests.');
+              process.exit(0);
+            } else if (initial === 'success') {
+              console.log('[SUCCESS] All tests passed on initial execution.');
+              process.exit(0);
+            } else {
+              console.log('[INFO] Workflow completed with initial outcome:', initial);
+              process.exit(0);
+            }
+          "
 
       # ========================================================================
       # 8. ARTIFACTS AND REPORTING
@@ -269,39 +255,43 @@ jobs:
           retention-days: 14
 
       # ========================================================================
-      # 9. GITHUB STEP SUMMARY GENERATION
+      # 9. GITHUB STEP SUMMARY GENERATION (CROSS-PLATFORM)
       # ========================================================================
       - name: Publish Test Execution Summary
         if: always()
         run: |
-          $InitialOutcome = "${{ steps.run_playwright_tests.outcome }}"
-          $RerunOutcome = "${{ steps.rerun_failed_tests.outcome }}"
-          if (-not $RerunOutcome) { $RerunOutcomeDisplay = "N/A" } else { $RerunOutcomeDisplay = $RerunOutcome }
+          node -e "
+            const fs = require('fs');
+            const os = require('os');
+            const initial = '${{ steps.run_playwright_tests.outcome }}';
+            const rerun = '${{ steps.rerun_failed_tests.outcome }}' || 'N/A';
+            const machine = os.hostname();
+            const summaryFile = process.env.GITHUB_STEP_SUMMARY;
+            if (!summaryFile) process.exit(0);
 
-          $MachineName = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { $env:HOSTNAME }
-          $ReportNote = "[Live Report] View report online via GitHub Pages (Repo -> Settings -> Pages -> Source: GitHub Actions) or download artifact below."
+            const reportNote = '[Live Report] View report online via GitHub Pages (Repo -> Settings -> Pages -> Source: GitHub Actions) or download artifact below.';
+            const markdown = [
+              '### Playwright Test Execution Summary',
+              '',
+              reportNote,
+              '',
+              '| Property | Value |',
+              '| --- | --- |',
+              '| **Execution Machine / VM** | \`${{ runner.name }} (' + machine + ')\` |',
+              '| **OS / Architecture** | \`${{ runner.os }} (${{ runner.arch }})\` |',
+              '| **Environment** | ' + (process.env.TEST_ENV || 'test') + ' |',
+              '| **Application** | ' + (process.env.TEST_APP || 'GOOGLE') + ' |',
+              '| **Device** | ' + (process.env.DEVICE || 'desktop') + ' |',
+              '| **Suite** | ' + (process.env.SUITE || 'smoke') + ' |',
+              '| **Browser** | ' + (process.env.BROWSER || 'chromium') + ' |',
+              '| **Initial Run Status** | ' + initial + ' |',
+              '| **Re-run Status** | ' + rerun + ' |',
+              '',
+              'Artifacts: Check the summary attachments below for detailed HTML reports, JSON results, screenshots, and traces.'
+            ].join('\n');
 
-          $SummaryLines = @(
-            "### Playwright Test Execution Summary",
-            "",
-            $ReportNote,
-            "",
-            "| Property | Value |",
-            "| --- | --- |",
-            "| **Execution Machine / VM** | ``${{ runner.name }} ($MachineName)`` |",
-            "| **OS / Architecture** | ``${{ runner.os }} (${{ runner.arch }})`` |",
-            "| **Environment** | $env:TEST_ENV |",
-            "| **Application** | $env:TEST_APP |",
-            "| **Device** | $env:DEVICE |",
-            "| **Suite** | $env:SUITE |",
-            "| **Browser** | $env:BROWSER |",
-            "| **Initial Run Status** | $InitialOutcome |",
-            "| **Re-run Status** | $RerunOutcomeDisplay |",
-            "",
-            "Artifacts: Check the summary attachments below for detailed HTML reports, JSON results, screenshots, and traces."
-          )
-          $SummaryText = $SummaryLines -join "`n"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $SummaryText
+            fs.appendFileSync(summaryFile, markdown + '\n');
+          "
 
   # ============================================================================
   # DEDICATED GITHUB PAGES DEPLOYMENT JOB (Runs on GitHub Cloud runner)

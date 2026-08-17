@@ -29,10 +29,9 @@ Get up and running in under 2 minutes:
 
 ```
 ├── config/                  # Environment, URL, and credential configurations
-│   ├── constants.ts         # Global timeouts, env & app types
 │   ├── credentials.ts       # Secure credential loader and validation
 │   ├── environments.ts      # Active environment configuration helper
-│   └── urls.ts              # URL mappings per app/environment
+│   └── urls.ts              # URL mappings per app/environment (and types)
 ├── pages/                   # Page Object Model (POM) classes
 │   ├── Pages-GOOGLE/
 │   │   └── LandingPage_GOOGLE.page.ts # Google Landing Page Object
@@ -156,6 +155,55 @@ npm run test:trace
 
 ---
 
+## 📊 Viewing Playwright Test Reports Inside the Browser
+
+You can view the full interactive HTML test report (with timeline, charts, failed steps, screenshots, network logs, and traces) in your browser using any of the following methods:
+
+### 🌐 Method 1: Live Online via GitHub Pages (Post GitHub Actions Run)
+
+Every workflow run automatically deploys the HTML report to GitHub Pages.
+
+1. **Direct Live URL**:
+   Open in your browser:
+   👉 **`https://teja91ybl.github.io/playwright-ts-framework/`**
+
+2. **From GitHub Actions UI**:
+   - Navigate to the completed workflow run in the **Actions** tab.
+   - Click **Summary** on the top-left sidebar.
+   - Under the **Deployments** panel on the right (or in the Step Summary section), click the **`github-pages`** link.
+
+> **Note (One-Time Setup in Repo Settings)**:
+> If the live page isn't active, ensure GitHub Pages is enabled:
+> Go to **Settings** -> **Pages** -> Under **Build and deployment** -> Set **Source** to **`GitHub Actions`**.
+
+---
+
+### 💻 Method 2: Locally in Your Browser via Playwright CLI
+
+After running tests locally (`npm run test`), open the HTML report with a built-in local server:
+
+```bash
+# Launch interactive HTML report in your default browser
+npm run test:report
+
+# Or using npx directly
+npx playwright show-report playwright-report
+```
+
+---
+
+### 📦 Method 3: Download from GitHub Actions Artifacts
+
+If you prefer to inspect reports offline without configuring GitHub Pages:
+
+1. Go to your completed GitHub Actions workflow run page.
+2. Scroll down to the **Artifacts** section at the bottom.
+3. Click on **`playwright-test-results-<run_id>`** to download the zip file.
+4. Extract the `.zip` archive on your machine.
+5. Open the extracted folder and double-click **`index.html`** — it opens instantly in Chrome, Edge, or Firefox.
+
+---
+
 ## ⚙️ CI/CD & GitHub Actions Execution
 
 The framework includes a production-ready GitHub Actions workflow (`.github/workflows/playwright.yml`) supporting both **GitHub Cloud runners** and **Self-Hosted Windows runners** (e.g. offline laptop/VM runners like `DESKTOP-1HQ5J38`).
@@ -203,9 +251,9 @@ Every workflow run automatically identifies and logs the Virtual Machine / Host 
 
 Run these commands to verify the framework is fully configured and operational:
 
-1. **Verify setup script**:
+1. **Verify setup and framework files**:
    ```bash
-   npx ts-node scripts/verify-framework.ts
+   npm run verify
    ```
 
 2. **List all discovered tests**:
@@ -213,7 +261,12 @@ Run these commands to verify the framework is fully configured and operational:
    npx playwright test --list
    ```
 
-3. **Execute the test suite**:
+3. **Execute the test suite on Google Chrome**:
    ```bash
-   npx playwright test tests/test-GOOGLE/GOOGLE.Validate.spec.ts
+   npm run test
+   ```
+
+4. **Launch the interactive HTML report in browser**:
+   ```bash
+   npm run test:report
    ```

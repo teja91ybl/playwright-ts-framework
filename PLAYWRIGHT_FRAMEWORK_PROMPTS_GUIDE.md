@@ -594,10 +594,6 @@ jobs:
     runs-on: ${{ github.event.inputs.runner || 'self-hosted' }}
     timeout-minutes: 120
 
-    defaults:
-      run:
-        shell: powershell
-
     env:
       TEST_ENV: ${{ github.event.inputs.environment || 'test' }}
       TEST_APP: ${{ github.event.inputs.application || 'GOOGLE' }}
@@ -613,7 +609,7 @@ jobs:
       - name: Setup Node.js (v24)
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: '24'
 
       - name: Install Dependencies
         run: npm ci
@@ -627,32 +623,81 @@ jobs:
         id: run_playwright_tests
         continue-on-error: true
         run: |
-          $GrepArg = ""
-          switch ($env:SUITE) {
-            "smoke"              { $GrepArg = '--grep "@Smoke|@smoke"' }
-            "regression"         { $GrepArg = '--grep "@Regression|@regression"' }
-            "targetedRegression" { $GrepArg = '--grep "@TargetedRegression|@targeted"' }
-            default              { $GrepArg = "" }
-          }
-          if ($GrepArg) {
-            $cmd = "npx playwright test --project=$env:BROWSER $GrepArg"
-          } else {
-            $cmd = "npx playwright test --project=$env:BROWSER"
-          }
-          Invoke-Expression $cmd
+          node -e "
+            const { spawnSync } = require('child_process');
+            const os = require('os');
+            console.log('==================================================');
+            console.log('STARTING PLAYWRIGHT TEST RUN');
+            console.log('Machine Name:', '${{ runner.name }} (' + os.hostname() + ')');
+            console.log('OS / Arch   :', '${{ runner.os }} (${{ runner.arch }})');
+            console.log('Environment :', process.env.TEST_ENV || 'test');
+            console.log('Application :', process.env.TEST_APP || 'GOOGLE');
+            console.log('Device      :', process.env.DEVICE || 'desktop');
+            console.log('Browser     :', process.env.BROWSER || 'chromium');
+            console.log('Suite       :', process.env.SUITE || 'smoke');
+            console.log('==================================================');
 
-      - name: Re-run Failed Tests
+            const suite = (process.env.SUITE || 'smoke').toLowerCase();
+            const browser = process.env.BROWSER || 'chromium';
+            let grep = '';
+            if (suite === 'smoke') grep = '@Smoke|@smoke';
+            else if (suite === 'regression') grep = '@Regression|@regression';
+            else if (suite === 'targetedregression') grep = '@TargetedRegression|@targeted';
+
+            const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+            const args = ['playwright', 'test', '--project=' + browser];
+            if (grep) args.push('--grep', grep);
+
+            console.log('Executing:', npxCmd, args.join(' '));
+            const res = spawnSync(npxCmd, args, { stdio: 'inherit', shell: false });
+            process.exit(res.status || 0);
+          "
+
+      - name: Re-run failed Playwright tests
         id: rerun_failed_tests
         if: steps.run_playwright_tests.outcome == 'failure'
         continue-on-error: true
         run: |
-          npx playwright test --last-failed --project=$env:BROWSER
+          node -e "
+            const { spawnSync } = require('child_process');
+            console.log('==================================================');
+            console.log('RETRYING FAILED TESTS ONLY (--last-failed)');
+            console.log('==================================================');
+            const browser = process.env.BROWSER || 'chromium';
+            const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+            const args = ['playwright', 'test', '--last-failed', '--project=' + browser];
 
-      - name: Finalize Test Status
+            console.log('Executing rerun:', npxCmd, args.join(' '));
+            const res = spawnSync(npxCmd, args, { stdio: 'inherit', shell: false });
+            process.exit(res.status || 0);
+          "
+
+      - name: Finalize test status
+        if: always()
         run: |
-          $Initial = "${{ steps.run_playwright_tests.outcome }}"
-          $Rerun = "${{ steps.rerun_failed_tests.outcome }}"
-          if ($Initial -eq "failure" -and $Rerun -eq "failure") { exit 1 }
+          node -e "
+            const initial = '${{ steps.run_playwright_tests.outcome }}';
+            const rerun = '${{ steps.rerun_failed_tests.outcome }}';
+            console.log('==================================================');
+            console.log('FINAL TEST STATUS EVALUATION');
+            console.log('Initial Run Outcome :', initial);
+            console.log('Re-run Outcome     :', rerun || 'N/A (Skipped)');
+            console.log('==================================================');
+
+            if (initial === 'failure' && rerun === 'failure') {
+              console.error('[CRITICAL] Initial test run AND rerun both failed.');
+              process.exit(1);
+            } else if (initial === 'failure' && rerun === 'success') {
+              console.log('[WARNING] Initial run failed, but rerun passed all failing tests.');
+              process.exit(0);
+            } else if (initial === 'success') {
+              console.log('[SUCCESS] All tests passed on initial execution.');
+              process.exit(0);
+            } else {
+              console.log('[INFO] Workflow completed with initial outcome:', initial);
+              process.exit(0);
+            }
+          "
 
       - name: Upload Test Artifacts
         if: always()
@@ -667,11 +712,38 @@ jobs:
       - name: Publish Test Execution Summary
         if: always()
         run: |
-          $Initial = "${{ steps.run_playwright_tests.outcome }}"
-          $Rerun = "${{ steps.rerun_failed_tests.outcome }}"
-          $ReportNote = "[Live Report] View report online via GitHub Pages (Repo -> Settings -> Pages -> Source: GitHub Actions) or download artifact below."
-          $SummaryText = "### Playwright Test Execution Summary`n`n$ReportNote`n`n- Initial Outcome: $Initial`n- Rerun Outcome: $Rerun"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $SummaryText
+          node -e "
+            const fs = require('fs');
+            const os = require('os');
+            const initial = '${{ steps.run_playwright_tests.outcome }}';
+            const rerun = '${{ steps.rerun_failed_tests.outcome }}' || 'N/A';
+            const machine = os.hostname();
+            const summaryFile = process.env.GITHUB_STEP_SUMMARY;
+            if (!summaryFile) process.exit(0);
+
+            const reportNote = '[Live Report] View report online via GitHub Pages (Repo -> Settings -> Pages -> Source: GitHub Actions) or download artifact below.';
+            const markdown = [
+              '### Playwright Test Execution Summary',
+              '',
+              reportNote,
+              '',
+              '| Property | Value |',
+              '| --- | --- |',
+              '| **Execution Machine / VM** | \`${{ runner.name }} (' + machine + ')\` |',
+              '| **OS / Architecture** | \`${{ runner.os }} (${{ runner.arch }})\` |',
+              '| **Environment** | ' + (process.env.TEST_ENV || 'test') + ' |',
+              '| **Application** | ' + (process.env.TEST_APP || 'GOOGLE') + ' |',
+              '| **Device** | ' + (process.env.DEVICE || 'desktop') + ' |',
+              '| **Suite** | ' + (process.env.SUITE || 'smoke') + ' |',
+              '| **Browser** | ' + (process.env.BROWSER || 'chromium') + ' |',
+              '| **Initial Run Status** | ' + initial + ' |',
+              '| **Re-run Status** | ' + rerun + ' |',
+              '',
+              'Artifacts: Check the summary attachments below for detailed HTML reports, JSON results, screenshots, and traces.'
+            ].join('\n');
+
+            fs.appendFileSync(summaryFile, markdown + '\n');
+          "
 
   # Dedicated deployment job for GitHub Pages (runs on GitHub Cloud Linux runner)
   deploy-report:
@@ -686,6 +758,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
     steps:
       - name: Download Playwright Report Artifact
