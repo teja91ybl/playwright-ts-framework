@@ -156,30 +156,7 @@ jobs:
         env:
           INITIAL_OUTCOME: ${{ steps.run_playwright_tests.outcome }}
           RERUN_OUTCOME: ${{ steps.rerun_failed_tests.outcome }}
-        run: |
-          node -e '
-            const initial = process.env.INITIAL_OUTCOME;
-            const rerun = process.env.RERUN_OUTCOME;
-            console.log("==================================================");
-            console.log("FINAL TEST STATUS EVALUATION");
-            console.log("Initial Run Outcome :", initial);
-            console.log("Re-run Outcome      :", rerun || "N/A (Skipped)");
-            console.log("==================================================");
-
-            if (initial === "failure" && rerun === "failure") {
-              console.error("[CRITICAL] Both initial run and rerun failed.");
-              process.exit(1);
-            } else if (initial === "failure" && rerun === "success") {
-              console.log("[WARNING] Initial run failed, but rerun passed.");
-              process.exit(0);
-            } else if (initial === "success") {
-              console.log("[SUCCESS] All tests passed on initial execution.");
-              process.exit(0);
-            } else {
-              console.log("[INFO] Workflow completed with outcome:", initial);
-              process.exit(0);
-            }
-          '
+        run: node scripts/finalize-status.js
 
       # ========================================================================
       # 8. ARTIFACTS AND DEPLOYMENT
@@ -225,42 +202,7 @@ jobs:
           RUNNER_ARCH: ${{ runner.arch }}
           REPO_OWNER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
-        run: |
-          node -e '
-            const fs = require("fs");
-            const os = require("os");
-            const initial = process.env.INITIAL_OUTCOME || "unknown";
-            const rerun = process.env.RERUN_OUTCOME || "N/A";
-            const machine = os.hostname();
-            const summaryFile = process.env.GITHUB_STEP_SUMMARY;
-            if (!summaryFile) process.exit(0);
-
-            const repoFull = process.env.GITHUB_REPOSITORY || (process.env.REPO_OWNER + "/" + process.env.REPO_NAME);
-            const [owner, repoName] = repoFull.includes("/") ? repoFull.split("/") : [process.env.REPO_OWNER, "playwright-ts-framework"];
-            const pageUrl = "https://" + owner + ".github.io/" + repoName + "/";
-            const reportNote = "[Live Report] [Click here to open Playwright Report in Browser](" + pageUrl + ")";
-            const markdown = [
-              "### Playwright Test Execution Summary",
-              "",
-              reportNote,
-              "",
-              "| Property | Value |",
-              "| --- | --- |",
-              "| **Execution Machine / VM** | `" + (process.env.RUNNER_NAME || "Runner") + " (" + machine + ")` |",
-              "| **OS / Architecture** | `" + (process.env.RUNNER_OS || os.platform()) + " (" + (process.env.RUNNER_ARCH || os.arch()) + ")` |",
-              "| **Environment** | " + (process.env.TEST_ENV || "test") + " |",
-              "| **Application** | " + (process.env.TEST_APP || "GOOGLE") + " |",
-              "| **Device** | " + (process.env.DEVICE || "desktop") + " |",
-              "| **Suite** | " + (process.env.SUITE || "smoke") + " |",
-              "| **Browser** | " + (process.env.BROWSER || "chromium") + " |",
-              "| **Initial Run Status** | " + initial + " |",
-              "| **Re-run Status** | " + rerun + " |",
-              "",
-              "Artifacts: Download the attached artifacts below for offline viewing, traces, screenshots, and videos."
-            ].join("\n");
-
-            fs.appendFileSync(summaryFile, markdown + "\n");
-          '
+        run: node scripts/publish-summary.js
 
   # ============================================================================
   # JOB 2: DEPLOY REPORT TO GITHUB PAGES (GitHub Actions UI Deployment Job)
@@ -278,6 +220,9 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
       - name: Download Playwright HTML Report
         uses: actions/download-artifact@v4
         with:
@@ -285,21 +230,7 @@ jobs:
           path: playwright-report
 
       - name: Ensure Report Integrity and Assets
-        run: |
-          node -e "
-            const fs = require('fs');
-            const path = require('path');
-            const targetDir = 'playwright-report';
-            if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
-            fs.writeFileSync(path.join(targetDir, '.nojekyll'), '');
-            const indexPath = path.join(targetDir, 'index.html');
-            if (!fs.existsSync(indexPath) || fs.statSync(indexPath).size === 0) {
-              console.warn('Playwright HTML report index.html not found; creating fallback summary.');
-              fs.writeFileSync(indexPath, '<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Playwright Report</title><style>body{font-family:sans-serif;background:#0d1117;color:#c9d1d9;padding:40px;text-align:center}h1{color:#58a6ff}</style></head><body><h1>Playwright Test Run Complete</h1><p>Check workflow artifacts for execution details.</p></body></html>');
-            } else {
-              console.log('Verified index.html exists, size: ' + fs.statSync(indexPath).size + ' bytes');
-            }
-          "
+        run: node scripts/ensure-report.js
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
@@ -320,20 +251,4 @@ jobs:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
           REPO_OWNER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
-        run: |
-          node -e '
-            const fs = require("fs");
-            const summaryFile = process.env.GITHUB_STEP_SUMMARY;
-            if (!summaryFile) process.exit(0);
-            const repoFull = process.env.GITHUB_REPOSITORY || (process.env.REPO_OWNER + "/" + process.env.REPO_NAME);
-            const [owner, repoName] = repoFull.includes("/") ? repoFull.split("/") : [process.env.REPO_OWNER, "playwright-ts-framework"];
-            const pageUrl = process.env.PAGE_URL || ("https://" + owner + ".github.io/" + repoName + "/");
-            const content = [
-              "### Live Playwright Test Report",
-              "",
-              "**Report URL:** " + pageUrl,
-              "",
-              "[Click here to open Interactive Playwright Report in Browser](" + pageUrl + ")"
-            ].join("\n");
-            fs.appendFileSync(summaryFile, content + "\n");
-          '
+        run: node scripts/publish-summary.js --pages-deploy
