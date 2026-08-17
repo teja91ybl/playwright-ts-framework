@@ -673,25 +673,32 @@ jobs:
         with:
           path: playwright-report
 
-      - name: Deploy Report to GitHub Pages
-        id: deployment
-        if: always()
-        uses: actions/deploy-pages@v4
-        continue-on-error: true
-
       - name: Publish Test Execution Summary
         if: always()
         run: |
           $Initial = "${{ steps.run_playwright_tests.outcome }}"
           $Rerun = "${{ steps.rerun_failed_tests.outcome }}"
-          $PageUrl = "${{ steps.deployment.outputs.page_url }}"
-          if ($PageUrl) {
-            $ReportHeader = "[Live Report] [Click Here to Open Playwright HTML Report in Browser]($PageUrl)"
-          } else {
-            $ReportHeader = "[Note] To enable live browser viewing: Go to GitHub Repo -> Settings -> Pages -> Source: GitHub Actions."
-          }
-          $SummaryText = "### Playwright Test Execution Summary`n`n$ReportHeader`n`n- Initial Outcome: $Initial`n- Rerun Outcome: $Rerun"
+          $ReportNote = "[Live Report] View report online via GitHub Pages (Repo -> Settings -> Pages -> Source: GitHub Actions) or download artifact below."
+          $SummaryText = "### Playwright Test Execution Summary`n`n$ReportNote`n`n- Initial Outcome: $Initial`n- Rerun Outcome: $Rerun"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $SummaryText
+
+  # Dedicated deployment job for GitHub Pages (runs on GitHub Cloud runner)
+  deploy-report:
+    name: Deploy Playwright HTML Report
+    needs: playwright-tests
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy Report to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
 ```
 </code_example>
 </prompt>

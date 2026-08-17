@@ -277,7 +277,7 @@ jobs:
           retention-days: 14
 
       # ========================================================================
-      # 8.1 GITHUB PAGES DEPLOYMENT (VIEW IN BROWSER ONLINE)
+      # 8.1 GITHUB PAGES ARTIFACT PACKAGING
       # ========================================================================
       - name: Setup GitHub Pages
         if: always()
@@ -291,12 +291,6 @@ jobs:
         with:
           path: playwright-report
 
-      - name: Deploy Playwright Report to GitHub Pages
-        id: deployment
-        if: always()
-        uses: actions/deploy-pages@v4
-        continue-on-error: true
-
       # ========================================================================
       # 9. GITHUB STEP SUMMARY GENERATION
       # ========================================================================
@@ -308,17 +302,12 @@ jobs:
           if (-not $RerunOutcome) { $RerunOutcomeDisplay = "N/A" } else { $RerunOutcomeDisplay = $RerunOutcome }
 
           $MachineName = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { $env:HOSTNAME }
-          $PageUrl = "${{ steps.deployment.outputs.page_url }}"
-          if ($PageUrl) {
-            $ReportHeader = "[Live Report] [Click Here to Open Playwright HTML Report in Browser]($PageUrl)"
-          } else {
-            $ReportHeader = "[Note] To enable live browser viewing: Go to GitHub Repo -> Settings -> Pages -> Source: GitHub Actions."
-          }
+          $ReportNote = "[Live Report] View report online via GitHub Pages (Repo -> Settings -> Pages -> Source: GitHub Actions) or download artifact below."
 
           $SummaryLines = @(
             "### Playwright Test Execution Summary",
             "",
-            $ReportHeader,
+            $ReportNote,
             "",
             "| Property | Value |",
             "| --- | --- |",
@@ -336,3 +325,23 @@ jobs:
           )
           $SummaryText = $SummaryLines -join "`n"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $SummaryText
+
+  # ============================================================================
+  # DEDICATED GITHUB PAGES DEPLOYMENT JOB (Runs on GitHub Cloud runner)
+  # ============================================================================
+  deploy-report:
+    name: Deploy Playwright HTML Report
+    needs: playwright-tests
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy Playwright Report to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
