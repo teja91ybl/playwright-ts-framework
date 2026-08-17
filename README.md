@@ -46,22 +46,35 @@ Get up and running in under 2 minutes:
 │   ├── assertionUtils.ts    # Reusable Playwright assertions
 │   ├── dataUtils.ts         # Data generators and JSON file reader
 │   ├── logger.ts            # Formatted console logger
+│   ├── reportHistory.ts     # Run ID generator and report directory initializer
 │   └── waitUtils.ts         # Explicit wait helpers
+├── reporters/               # Custom Playwright reporters
+│   ├── detailed-reporter.ts # Formatted test run console reporter
+│   └── auto-heal-reporter.ts# Auto-heal failure analysis reporter
 ├── testData/                # Test data files
 │   └── sampleData.json      # Sample JSON test data
 ├── results/                 # Test run outputs & execution artifacts
-│   ├── artifacts/           # Traces, screenshots, and videos on failure
-│   ├── playwright-report/   # Generated HTML report
-│   └── test-results/        # JSON test output results
-├── scripts/                 # Maintenance & verification scripts
-│   └── verify-framework.ts  # Self-verification script
-├── .env                     # Local environment variables
+│   ├── artifacts/           # Traces, screenshots, and videos on failure (.gitkeep)
+│   ├── playwright-report/   # Generated HTML report (.gitkeep)
+│   └── test-results/        # JSON test output results (.gitkeep)
+├── scripts/                 # Cross-platform execution & CI/CD scripts
+│   ├── run-tests.js         # Cross-platform test execution and rerun runner
+│   ├── finalize-status.js   # Final CI status and exit code evaluator
+│   ├── publish-summary.js   # GitHub Actions step summary markdown publisher
+│   ├── ensure-report.js     # HTML report validator and .nojekyll generator
+│   ├── deploy-report.js     # GitHub Pages direct git branch publisher
+│   └── verify-framework.ts  # Self-verification framework integrity checker
+├── .github/                 # GitHub Actions CI/CD workflows
+│   └── workflows/
+│       └── playwright.yml   # Production 2-job CI/CD workflow with GitHub Pages
+├── .env                     # Local environment variables (git-ignored)
 ├── .env.example             # Environment template
 ├── .gitignore               # Git ignore rules
 ├── package.json             # NPM dependencies & execution scripts
 ├── tsconfig.json            # TypeScript compiler options
 ├── playwright.config.ts     # Main Playwright configuration
-└── README.md                # Documentation
+├── PLAYWRIGHT_FRAMEWORK_PROMPTS_GUIDE.md # Complete step-by-step framework prompt guide
+└── README.md                # Comprehensive documentation
 ```
 
 ---
@@ -101,20 +114,59 @@ Get up and running in under 2 minutes:
 ## 🧪 Running Tests
 
 ### By Environment (dev / test / stage / prod)
-Run tests targeting specific environment endpoints using pre-configured `cross-env` scripts:
+Run all tests across all applications targeting a specific environment:
 
 ```bash
-# Run on DEV environment
+# Run all apps on DEV environment
 npm run test:dev
 
-# Run on TEST environment
+# Run all apps on TEST environment
 npm run test:test
 
-# Run on STAGE environment
+# Run all apps on STAGE environment
 npm run test:stage
 
-# Run on PROD environment
+# Run all apps on PROD environment
 npm run test:prod
+```
+
+### By Apps (dev / test / stage / prod)
+Target a specific application (`GOOGLE` or `APPLE`) across different environments by passing the test folder or spec file:
+
+#### 🌐 Run All GOOGLE Tests
+```bash
+# Run GOOGLE tests on DEV
+npm run test:dev -- tests/test-GOOGLE
+
+# Run GOOGLE tests on TEST
+npm run test:test -- tests/test-GOOGLE
+
+# Run GOOGLE tests on STAGE
+npm run test:stage -- tests/test-GOOGLE
+
+# Run GOOGLE tests on PROD
+npm run test:prod -- tests/test-GOOGLE
+
+# Run GOOGLE tests with specific tags or headed mode
+npm run test:stage -- tests/test-GOOGLE/GOOGLE.Validate.spec.ts --grep @Smoke --headed
+```
+
+#### 🍏 Run All APPLE Tests
+```bash
+# Run APPLE tests on DEV
+npm run test:dev -- tests/test-APPLE
+
+# Run APPLE tests on TEST
+npm run test:test -- tests/test-APPLE
+
+# Run APPLE tests on STAGE
+npm run test:stage -- tests/test-APPLE
+
+# Run APPLE tests on PROD
+npm run test:prod -- tests/test-APPLE
+
+# Run APPLE tests with specific tags or headed mode
+npm run test:stage -- tests/test-APPLE/APPLE.Validate.spec.ts --grep @Smoke --headed
 ```
 
 ### By Test Tag (@smoke / @regression / @targeted)
