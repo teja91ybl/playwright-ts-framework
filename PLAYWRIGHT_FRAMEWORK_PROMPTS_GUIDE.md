@@ -584,6 +584,9 @@ permissions:
   pages: write
   id-token: write
 
+env:
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
+
 jobs:
   playwright-tests:
     name: Execute Playwright Automated Tests
@@ -661,18 +664,6 @@ jobs:
             test-results
           retention-days: 14
 
-      - name: Setup GitHub Pages
-        if: always()
-        uses: actions/configure-pages@v5
-        continue-on-error: true
-
-      - name: Upload Report to Pages
-        if: always()
-        uses: actions/upload-pages-artifact@v3
-        continue-on-error: true
-        with:
-          path: playwright-report
-
       - name: Publish Test Execution Summary
         if: always()
         run: |
@@ -682,7 +673,7 @@ jobs:
           $SummaryText = "### Playwright Test Execution Summary`n`n$ReportNote`n`n- Initial Outcome: $Initial`n- Rerun Outcome: $Rerun"
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $SummaryText
 
-  # Dedicated deployment job for GitHub Pages (runs on GitHub Cloud runner)
+  # Dedicated deployment job for GitHub Pages (runs on GitHub Cloud Linux runner)
   deploy-report:
     name: Deploy Playwright HTML Report
     needs: playwright-tests
@@ -694,9 +685,41 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
     steps:
-      - name: Deploy Report to GitHub Pages
+      - name: Download Playwright Report Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: playwright-test-results-${{ github.run_id }}
+          path: playwright-artifacts
+
+      - name: Prepare Report Directory
+        run: |
+          mkdir -p playwright-report
+          if [ -d "playwright-artifacts/playwright-report" ]; then
+            cp -r playwright-artifacts/playwright-report/* playwright-report/
+          elif [ -d "playwright-artifacts" ]; then
+            cp -r playwright-artifacts/* playwright-report/
+          fi
+          if [ ! -f "playwright-report/index.html" ]; then
+            echo "<html><body><h2>Playwright Test Run Complete</h2><p>Check downloadable artifacts for test execution details.</p></body></html>" > playwright-report/index.html
+          fi
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+        continue-on-error: true
+
+      - name: Upload Playwright HTML Report to GitHub Pages
+        id: upload_pages
+        uses: actions/upload-pages-artifact@v3
+        continue-on-error: true
+        with:
+          path: playwright-report
+
+      - name: Deploy Playwright Report to GitHub Pages
         id: deployment
+        if: steps.upload_pages.outcome == 'success'
         uses: actions/deploy-pages@v4
         continue-on-error: true
 ```
