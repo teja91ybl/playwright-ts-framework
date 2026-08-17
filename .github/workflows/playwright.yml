@@ -238,47 +238,20 @@ jobs:
       # ========================================================================
       # 8. ARTIFACTS AND REPORTING
       # ========================================================================
-      - name: Ensure Report Exists
-        if: always()
-        run: |
-          node -e "
-            const fs = require('fs');
-            const path = require('path');
-            const target = 'playwright-report';
-            if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
-            const alt = path.join('results', 'playwright-report');
-            if (fs.existsSync(alt) && fs.readdirSync(alt).length > 0 && fs.readdirSync(target).length === 0) {
-              fs.cpSync(alt, target, { recursive: true });
-            }
-          "
-
-      - name: Upload Playwright HTML Report
+      # UPDATE HERE: Customize retention days or artifact paths if needed.
+      # Default paths: playwright-report, test-results, results
+      # ========================================================================
+      - name: Upload Test Artifacts and Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-html-report
-          path: playwright-report
+          name: playwright-test-results-${{ github.run_id }}
+          path: |
+            playwright-report
+            test-results
+            results/playwright-report
+            results/test-results
           retention-days: 14
-
-      - name: Upload Test Results Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-test-results
-          path: test-results
-          retention-days: 14
-
-      # Deploy report directly to GitHub Pages (gh-pages branch)
-      - name: Deploy Playwright Report to GitHub Pages (Branch)
-        if: always()
-        uses: peaceiris/actions-gh-pages@v4
-        continue-on-error: true
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./playwright-report
-          keep_files: false
-          user_name: 'github-actions[bot]'
-          user_email: 'github-actions[bot]@users.noreply.github.com'
 
       # ========================================================================
       # 9. GITHUB STEP SUMMARY GENERATION (CROSS-PLATFORM)
@@ -337,28 +310,21 @@ jobs:
     env:
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
     steps:
-      - name: Download Playwright HTML Report
+      - name: Download Playwright Report Artifact
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
-          name: playwright-html-report
-          path: playwright-report
+          name: playwright-test-results-${{ github.run_id }}
+          path: playwright-artifacts
 
-      - name: Verify Report File Exists
+      - name: Prepare Report Directory
+        shell: bash
         run: |
-          node -e "
-            const fs = require('fs');
-            const path = require('path');
-            console.log('Inspecting downloaded report folder:');
-            if (fs.existsSync('playwright-report')) {
-              console.log('Files:', fs.readdirSync('playwright-report'));
-              const indexPath = path.join('playwright-report', 'index.html');
-              if (fs.existsSync(indexPath)) {
-                const stat = fs.statSync(indexPath);
-                console.log('Verified index.html size:', stat.size, 'bytes');
-              }
-            }
-          "
+          mkdir -p playwright-report
+          if [ -d "playwright-artifacts/playwright-report" ]; then
+            cp -r playwright-artifacts/playwright-report/* playwright-report/
+          elif [ -d "playwright-artifacts" ]; then
+            cp -r playwright-artifacts/* playwright-report/
+          fi
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
