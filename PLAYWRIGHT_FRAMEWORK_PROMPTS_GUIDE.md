@@ -183,6 +183,7 @@ export default defineConfig({
     ['./reporters/auto-heal-reporter.ts'],
     ['html', { open: 'never', outputFolder: 'playwright-report' }],
     ['list'],
+    ...(process.env.CI ? [['github'] as const] : []),
   ],
   use: {
     headless: !isHeaded,
@@ -677,6 +678,20 @@ jobs:
         if: always()
         uses: actions/deploy-pages@v4
         continue-on-error: true
+
+      - name: Publish Test Execution Summary
+        if: always()
+        run: |
+          $Initial = "${{ steps.run_playwright_tests.outcome }}"
+          $Rerun = "${{ steps.rerun_failed_tests.outcome }}"
+          $PageUrl = "${{ steps.deployment.outputs.page_url }}"
+          if ($PageUrl) {
+            $ReportHeader = "[Live Report] [Click Here to Open Playwright HTML Report in Browser]($PageUrl)"
+          } else {
+            $ReportHeader = "[Note] To enable live browser viewing: Go to GitHub Repo -> Settings -> Pages -> Source: GitHub Actions."
+          }
+          $SummaryText = "### Playwright Test Execution Summary`n`n$ReportHeader`n`n- Initial Outcome: $Initial`n- Rerun Outcome: $Rerun"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $SummaryText
 ```
 </code_example>
 </prompt>

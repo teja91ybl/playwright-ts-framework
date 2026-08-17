@@ -75,6 +75,7 @@ export default defineConfig({
     ['./reporters/auto-heal-reporter.ts'],
     ['html', { open: 'never', outputFolder: 'playwright-report' }],
     ['list'],
+    ...(process.env.CI ? [['github'] as const] : []),
   ],
   use: {
     headless: !isHeaded,
