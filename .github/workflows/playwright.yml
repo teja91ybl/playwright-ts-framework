@@ -240,26 +240,30 @@ jobs:
       # ========================================================================
       # UPDATE HERE: Customize retention days or artifact paths if needed.
       # ========================================================================
-      - name: Verify and Package Report Directory
+      - name: Verify Report Directory Before Upload
         if: always()
         run: |
           node -e "
             const fs = require('fs');
             const path = require('path');
+            console.log('Checking generated report files before upload:');
             const target = 'playwright-report';
-            if (!fs.existsSync(target)) {
-              fs.mkdirSync(target, { recursive: true });
-            }
+            if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
+
             const alt = path.join('results', 'playwright-report');
-            if (fs.existsSync(alt)) {
-              const files = fs.readdirSync(alt);
-              if (files.length > 0 && fs.readdirSync(target).length === 0) {
+            if (fs.existsSync(alt) && fs.readdirSync(alt).length > 0) {
+              if (fs.readdirSync(target).length === 0) {
+                console.log('Copying report from results/playwright-report to playwright-report...');
                 fs.cpSync(alt, target, { recursive: true });
               }
             }
+
             const indexPath = path.join(target, 'index.html');
-            if (!fs.existsSync(indexPath)) {
-              fs.writeFileSync(indexPath, '<!DOCTYPE html><html><head><title>Playwright Report</title></head><body><h2>Playwright Test Run Complete</h2><p>Live execution completed.</p></body></html>');
+            if (fs.existsSync(indexPath)) {
+              const stat = fs.statSync(indexPath);
+              console.log('Verified index.html exists, size:', stat.size, 'bytes');
+            } else {
+              console.log('Files in playwright-report:', fs.readdirSync(target));
             }
           "
 
@@ -337,21 +341,31 @@ jobs:
     steps:
       - name: Download Playwright HTML Report
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
           name: playwright-html-report
           path: playwright-report
 
-      - name: Ensure Report Directory Integrity
+      - name: Verify Downloaded Report Contents
         run: |
           node -e "
             const fs = require('fs');
             const path = require('path');
-            const targetDir = 'playwright-report';
-            if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
-            const indexPath = path.join(targetDir, 'index.html');
-            if (!fs.existsSync(indexPath)) {
-              fs.writeFileSync(indexPath, '<!DOCTYPE html><html><head><title>Playwright Report</title></head><body><h2>Playwright Test Run Complete</h2><p>Live execution completed. Please check the workflow run summary for artifacts.</p></body></html>');
+            console.log('Inspecting downloaded report folder:');
+            if (fs.existsSync('playwright-report')) {
+              console.log('playwright-report files:', fs.readdirSync('playwright-report'));
+              const indexPath = path.join('playwright-report', 'index.html');
+              if (fs.existsSync(indexPath)) {
+                const stat = fs.statSync(indexPath);
+                console.log('Found index.html at root, size:', stat.size, 'bytes');
+              } else {
+                const nested = path.join('playwright-report', 'playwright-report');
+                if (fs.existsSync(nested)) {
+                  console.log('Found nested report directory, moving files to root...');
+                  fs.cpSync(nested, 'playwright-report', { recursive: true });
+                }
+              }
+            } else {
+              console.error('ERROR: playwright-report directory does not exist!');
             }
           "
 
