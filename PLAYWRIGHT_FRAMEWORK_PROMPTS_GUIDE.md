@@ -698,14 +698,20 @@ jobs:
             }
           "
 
-      - name: Upload Test Artifacts
+      - name: Upload Playwright HTML Report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-artifact
-          path: |
-            playwright-report
-            test-results
+          name: playwright-html-report
+          path: playwright-report
+          retention-days: 14
+
+      - name: Upload Test Results Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: test-results
           retention-days: 14
 
       - name: Publish Test Execution Summary
@@ -759,41 +765,11 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
     steps:
-      - name: Download Playwright Report Artifact
+      - name: Download Playwright HTML Report
         uses: actions/download-artifact@v4
-        continue-on-error: true
         with:
-          name: playwright-report-artifact
-          path: playwright-artifacts
-
-      - name: Prepare Report Directory
-        run: |
-          node -e "
-            const fs = require('fs');
-            const path = require('path');
-            const targetDir = 'playwright-report';
-            if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
-
-            const locations = [
-              path.join('playwright-artifacts', 'playwright-report'),
-              'playwright-artifacts'
-            ];
-
-            for (const loc of locations) {
-              if (fs.existsSync(loc) && loc !== targetDir) {
-                try {
-                  fs.cpSync(loc, targetDir, { recursive: true });
-                } catch (e) {
-                  console.log('Copy notice:', e.message);
-                }
-              }
-            }
-
-            const indexPath = path.join(targetDir, 'index.html');
-            if (!fs.existsSync(indexPath)) {
-              fs.writeFileSync(indexPath, '<!DOCTYPE html><html><head><title>Playwright Report</title></head><body><h2>Playwright Test Execution Report</h2><p>Tests completed. Download full artifacts from the workflow run summary.</p></body></html>');
-            }
-          "
+          name: playwright-html-report
+          path: playwright-report
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
