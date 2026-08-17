@@ -81,21 +81,17 @@ permissions:
   id-token: write
 
 jobs:
+  # ============================================================================
+  # JOB 1: PLAYWRIGHT AUTOMATED TEST EXECUTION
+  # ============================================================================
   playwright-tests:
     name: Execute Playwright Automated Tests
 
-    # ==========================================================================
-    # 2. VIRTUAL MACHINE (VM) / RUNNER SELECTION
-    # ==========================================================================
     # Works seamlessly across Windows self-hosted and GitHub-hosted runners.
-    # ==========================================================================
     runs-on: ${{ inputs.runner || github.event.inputs.runner || 'self-hosted' }}
 
     timeout-minutes: 120
 
-    # ==========================================================================
-    # 3. USER CREDENTIALS & ENVIRONMENT SECRETS
-    # ==========================================================================
     env:
       ENV: ${{ inputs.environment || github.event.inputs.environment || 'test' }}
       TEST_ENV: ${{ inputs.environment || github.event.inputs.environment || 'test' }}
@@ -237,19 +233,28 @@ jobs:
       # ========================================================================
       # 8. ARTIFACTS AND DEPLOYMENT
       # ========================================================================
-      - name: Upload Test Artifacts
+      # Upload the HTML report directory as an artifact
+      - name: Upload Playwright HTML Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-html-report
+          path: playwright-report
+          retention-days: 14
+          if-no-files-found: warn
+
+      # Upload the raw test results (traces, screenshots, videos)
+      - name: Upload Test Results Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-test-results
-          path: |
-            playwright-report
-            test-results
+          path: test-results
           retention-days: 14
           if-no-files-found: warn
 
-      # Deploy report directly to GitHub Pages (gh-pages branch via direct git push)
-      - name: Deploy Playwright Report to GitHub Pages
+      # Deploy report directly to GitHub Pages branch (gh-pages branch via direct git push)
+      - name: Deploy Playwright Report to GitHub Pages Branch
         if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -296,4 +301,76 @@ jobs:
             ].join('\n');
 
             fs.appendFileSync(summaryFile, markdown + '\n');
+          "
+
+  # ============================================================================
+  # JOB 2: DEPLOY REPORT TO GITHUB PAGES (GitHub Actions UI Deployment Job)
+  # ============================================================================
+  deploy-report:
+    name: Deploy Playwright HTML Report
+    needs: playwright-tests
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download Playwright HTML Report
+        uses: actions/download-artifact@v4
+        with:
+          name: playwright-html-report
+          path: playwright-report
+
+      - name: Ensure Report Integrity and Assets
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const targetDir = 'playwright-report';
+            if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+            fs.writeFileSync(path.join(targetDir, '.nojekyll'), '');
+            const indexPath = path.join(targetDir, 'index.html');
+            if (!fs.existsSync(indexPath) || fs.statSync(indexPath).size === 0) {
+              console.warn('Playwright HTML report index.html not found; creating fallback summary.');
+              fs.writeFileSync(indexPath, '<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>Playwright Report</title><style>body{font-family:sans-serif;background:#0d1117;color:#c9d1d9;padding:40px;text-align:center}h1{color:#58a6ff}</style></head><body><h1>Playwright Test Run Complete</h1><p>Check workflow artifacts for execution details.</p></body></html>');
+            } else {
+              console.log('Verified index.html exists, size: ' + fs.statSync(indexPath).size + ' bytes');
+            }
+          "
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Playwright HTML Report to GitHub Pages
+        id: upload_pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: playwright-report
+
+      - name: Deploy Playwright Report to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Publish Live Report Link to Summary
+        if: always()
+        run: |
+          node -e "
+            const fs = require('fs');
+            const summaryFile = process.env.GITHUB_STEP_SUMMARY;
+            if (!summaryFile) process.exit(0);
+            const repoFull = '${{ github.repository }}';
+            const [owner, repoName] = repoFull.split('/');
+            const pageUrl = '${{ steps.deployment.outputs.page_url }}' || ('https://' + owner + '.github.io/' + repoName + '/');
+            const content = [
+              '### Live Playwright Test Report',
+              '',
+              '**Report URL:** ' + pageUrl,
+              '',
+              '[Click here to open Interactive Playwright Report in Browser](' + pageUrl + ')'
+            ].join('\n');
+            fs.appendFileSync(summaryFile, content + '\n');
           "
