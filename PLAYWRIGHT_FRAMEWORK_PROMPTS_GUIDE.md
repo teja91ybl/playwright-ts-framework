@@ -585,6 +585,7 @@ permissions:
   id-token: write
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
 
 jobs:
@@ -613,7 +614,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: 'npm'
 
       - name: Install Dependencies
         run: npm ci
@@ -722,6 +722,19 @@ jobs:
         if: steps.upload_pages.outcome == 'success'
         uses: actions/deploy-pages@v4
         continue-on-error: true
+
+      - name: Publish Live Report Link to Summary
+        if: always()
+        run: |
+          PAGE_URL="${{ steps.deployment.outputs.page_url }}"
+          if [ -z "$PAGE_URL" ]; then
+            PAGE_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+          fi
+          echo "### Live Playwright Test Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Report URL: $PAGE_URL" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "[Click here to open Playwright Report in Browser]($PAGE_URL)" >> $GITHUB_STEP_SUMMARY
 ```
 </code_example>
 </prompt>
