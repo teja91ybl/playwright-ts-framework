@@ -3,9 +3,8 @@ name: Playwright Test Automation CI/CD
 # ==============================================================================
 # 1. TRIGGER DEFINITIONS
 # ==============================================================================
-# UPDATE HERE: Customize triggers according to your project's CI/CD strategy.
-# - Push / PR triggers can be configured for specific branches (e.g., main, master, develop).
-# - Manual trigger (workflow_dispatch) allows dynamic execution via GitHub UI/API.
+# - Push / PR triggers execute on main branch.
+# - Manual trigger (workflow_dispatch) allows dynamic execution via GitHub UI.
 # ==============================================================================
 on:
   push:
@@ -61,12 +60,13 @@ on:
           - targetedRegression
           - all
       browser:
-        description: 'Browser project engine (chromium/firefox/webkit)'
+        description: 'Browser project engine (chromium/chrome/firefox/webkit)'
         required: true
         default: 'chromium'
         type: choice
         options:
           - chromium
+          - chrome
           - firefox
           - webkit
 
@@ -80,9 +80,6 @@ permissions:
   pages: write
   id-token: write
 
-env:
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
-
 jobs:
   playwright-tests:
     name: Execute Playwright Automated Tests
@@ -90,32 +87,25 @@ jobs:
     # ==========================================================================
     # 2. VIRTUAL MACHINE (VM) / RUNNER SELECTION
     # ==========================================================================
-    # Configured for Windows Self-Hosted Runner (DESKTOP-1HQ5J38) or UI choice.
+    # Works seamlessly across Windows self-hosted and GitHub-hosted runners.
     # ==========================================================================
-    runs-on: ${{ github.event.inputs.runner || 'self-hosted' }}
+    runs-on: ${{ inputs.runner || github.event.inputs.runner || 'self-hosted' }}
 
-    # UPDATE HERE: Adjust overall job timeout limit (in minutes) for long-running suites
     timeout-minutes: 120
 
     # ==========================================================================
     # 3. USER CREDENTIALS & ENVIRONMENT SECRETS
     # ==========================================================================
-    # UPDATE HERE: Map your environment credentials stored in GitHub Repository Secrets.
-    # Go to: GitHub Repository -> Settings -> Secrets and variables -> Actions
-    # Define credentials matching your targeted environments (DEV, TEST, STAGE, PROD).
-    # ==========================================================================
     env:
-      # General Environment Configuration
-      ENV: ${{ github.event.inputs.environment || 'test' }}
-      TEST_ENV: ${{ github.event.inputs.environment || 'test' }}
-      TEST_APP: ${{ github.event.inputs.application || 'GOOGLE' }}
-      DEVICE: ${{ github.event.inputs.device || 'desktop' }}
-      SUITE: ${{ github.event.inputs.suite || 'smoke' }}
-      BROWSER: ${{ github.event.inputs.browser || 'chromium' }}
+      ENV: ${{ inputs.environment || github.event.inputs.environment || 'test' }}
+      TEST_ENV: ${{ inputs.environment || github.event.inputs.environment || 'test' }}
+      TEST_APP: ${{ inputs.application || github.event.inputs.application || 'GOOGLE' }}
+      DEVICE: ${{ inputs.device || github.event.inputs.device || 'desktop' }}
+      SUITE: ${{ inputs.suite || github.event.inputs.suite || 'smoke' }}
+      BROWSER: ${{ inputs.browser || github.event.inputs.browser || 'chromium' }}
       CI: 'true'
 
-      # Environment Credentials (Injected securely from Repository Secrets)
-      # UPDATE HERE: Add, remove, or rename these secrets to match your system secrets
+      # Environment Credentials
       DEV_USERNAME: ${{ secrets.DEV_USERNAME }}
       DEV_PASSWORD: ${{ secrets.DEV_PASSWORD }}
       TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
@@ -144,7 +134,6 @@ jobs:
       - name: Install Playwright Browsers
         run: |
           npx playwright install --with-deps
-          npx playwright install chrome
 
       # ========================================================================
       # 5. INITIAL TEST EXECUTION (CROSS-PLATFORM RUNNER)
@@ -154,7 +143,7 @@ jobs:
         continue-on-error: true
         run: |
           node -e "
-            const { spawnSync } = require('child_process');
+            const { execSync } = require('child_process');
             const os = require('os');
             console.log('==================================================');
             console.log('STARTING PLAYWRIGHT TEST RUN');
@@ -168,19 +157,24 @@ jobs:
             console.log('==================================================');
 
             const suite = (process.env.SUITE || 'smoke').toLowerCase();
-            const browser = process.env.BROWSER || 'chromium';
+            const browser = (process.env.BROWSER || 'chromium').toLowerCase();
             let grep = '';
             if (suite === 'smoke') grep = '@Smoke|@smoke';
             else if (suite === 'regression') grep = '@Regression|@regression';
             else if (suite === 'targetedregression') grep = '@TargetedRegression|@targeted';
 
-            const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-            const args = ['playwright', 'test', '--project=' + browser];
-            if (grep) args.push('--grep', grep);
+            let cmd = 'npx playwright test';
+            if (browser) cmd += ' --project=' + browser;
+            if (grep) cmd += ' --grep \"' + grep + '\"';
 
-            console.log('Executing:', npxCmd, args.join(' '));
-            const res = spawnSync(npxCmd, args, { stdio: 'inherit', shell: false });
-            process.exit(res.status || 0);
+            console.log('Executing:', cmd);
+            try {
+              execSync(cmd, { stdio: 'inherit', env: process.env });
+              process.exit(0);
+            } catch (err) {
+              console.error('[ERROR] Playwright tests failed with exit code:', err.status || 1);
+              process.exit(err.status || 1);
+            }
           "
 
       # ========================================================================
@@ -192,17 +186,22 @@ jobs:
         continue-on-error: true
         run: |
           node -e "
-            const { spawnSync } = require('child_process');
+            const { execSync } = require('child_process');
             console.log('==================================================');
             console.log('RETRYING FAILED TESTS ONLY (--last-failed)');
             console.log('==================================================');
-            const browser = process.env.BROWSER || 'chromium';
-            const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-            const args = ['playwright', 'test', '--last-failed', '--project=' + browser];
+            const browser = (process.env.BROWSER || 'chromium').toLowerCase();
+            let cmd = 'npx playwright test --last-failed';
+            if (browser) cmd += ' --project=' + browser;
 
-            console.log('Executing rerun:', npxCmd, args.join(' '));
-            const res = spawnSync(npxCmd, args, { stdio: 'inherit', shell: false });
-            process.exit(res.status || 0);
+            console.log('Executing rerun:', cmd);
+            try {
+              execSync(cmd, { stdio: 'inherit', env: process.env });
+              process.exit(0);
+            } catch (err) {
+              console.error('[ERROR] Playwright rerun failed with exit code:', err.status || 1);
+              process.exit(err.status || 1);
+            }
           "
 
       # ========================================================================
@@ -217,7 +216,7 @@ jobs:
             console.log('==================================================');
             console.log('FINAL TEST STATUS EVALUATION');
             console.log('Initial Run Outcome :', initial);
-            console.log('Re-run Outcome     :', rerun || 'N/A (Skipped)');
+            console.log('Re-run Outcome      :', rerun || 'N/A (Skipped)');
             console.log('==================================================');
 
             if (initial === 'failure' && rerun === 'failure') {
@@ -247,12 +246,14 @@ jobs:
             playwright-report
             test-results
           retention-days: 14
+          if-no-files-found: warn
 
       # Deploy report directly to GitHub Pages (gh-pages branch via direct git push)
       - name: Deploy Playwright Report to GitHub Pages
         if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: node scripts/deploy-report.js
 
       # ========================================================================
@@ -270,7 +271,9 @@ jobs:
             const summaryFile = process.env.GITHUB_STEP_SUMMARY;
             if (!summaryFile) process.exit(0);
 
-            const pageUrl = 'https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/';
+            const repoFull = process.env.GITHUB_REPOSITORY || '${{ github.repository }}' || '';
+            const [owner, repoName] = repoFull.includes('/') ? repoFull.split('/') : ['${{ github.repository_owner }}', 'playwright-ts-framework'];
+            const pageUrl = 'https://' + owner + '.github.io/' + repoName + '/';
             const reportNote = '[Live Report] [Click here to open Playwright Report in Browser](' + pageUrl + ')';
             const markdown = [
               '### Playwright Test Execution Summary',

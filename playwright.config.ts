@@ -8,11 +8,11 @@ process.env.PW_RUN_ID = process.env.PW_RUN_ID || createRunId();
 prepareReportHistory();
 
 const deviceType = (process.env.DEVICE || 'desktop').toLowerCase();
-const browserEnv = (process.env.BROWSER || '').toLowerCase();
+const browserEnv = (process.env.BROWSER || 'chromium').toLowerCase();
 
-let activeProjectName = 'Desktop Chrome';
+let activeProjectName = 'chromium';
 let activeDeviceConfig: any = devices['Desktop Chrome'];
-let channel: string | undefined = 'chrome';
+let channel: string | undefined = undefined;
 
 if (deviceType === 'mobile' || browserEnv === 'pixel 5' || browserEnv === 'mobile') {
   activeProjectName = 'Pixel 5';
@@ -30,20 +30,24 @@ if (deviceType === 'mobile' || browserEnv === 'pixel 5' || browserEnv === 'mobil
   activeProjectName = 'webkit';
   activeDeviceConfig = devices['Desktop Safari'];
   channel = undefined;
+} else if (browserEnv === 'chrome') {
+  activeProjectName = 'chrome';
+  activeDeviceConfig = devices['Desktop Chrome'];
+  channel = 'chrome';
 } else if (browserEnv === 'chromium') {
   activeProjectName = 'chromium';
   activeDeviceConfig = devices['Desktop Chrome'];
-  channel = 'chrome';
+  channel = undefined;
 } else {
-  activeProjectName = 'Desktop Chrome';
+  activeProjectName = browserEnv || 'chromium';
   activeDeviceConfig = devices['Desktop Chrome'];
-  channel = 'chrome';
+  channel = undefined;
 }
 
 if (!activeDeviceConfig) {
-  activeProjectName = 'Desktop Chrome';
+  activeProjectName = 'chromium';
   activeDeviceConfig = devices['Desktop Chrome'];
-  channel = 'chrome';
+  channel = undefined;
 }
 
 const isMobileOrTablet = deviceType === 'mobile' || deviceType === 'tablet';
