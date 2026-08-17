@@ -173,8 +173,8 @@ Every workflow run automatically deploys the HTML report to GitHub Pages.
    - Under the **Deployments** panel on the right (or in the Step Summary section), click the **`github-pages`** link.
 
 > **Note (One-Time Setup in Repo Settings)**:
-> If the live page isn't active, ensure GitHub Pages is enabled:
-> Go to **Settings** -> **Pages** -> Under **Build and deployment** -> Set **Source** to **`GitHub Actions`**.
+> Ensure GitHub Pages is enabled:
+> Go to **Settings** -> **Pages** -> Under **Build and deployment** -> Set **Source** to **`Deploy from a branch`**, and select Branch **`gh-pages`** / Folder **`/ (root)`**.
 
 ---
 

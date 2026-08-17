@@ -580,7 +580,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -698,48 +698,41 @@ jobs:
             }
           "
 
-      - name: Verify Report Directory Before Upload
+      - name: Ensure Report Exists
         if: always()
         run: |
           node -e "
             const fs = require('fs');
             const path = require('path');
-            console.log('Checking generated report files before upload:');
             const target = 'playwright-report';
             if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
-
             const alt = path.join('results', 'playwright-report');
-            if (fs.existsSync(alt) && fs.readdirSync(alt).length > 0) {
-              if (fs.readdirSync(target).length === 0) {
-                console.log('Copying report from results/playwright-report to playwright-report...');
-                fs.cpSync(alt, target, { recursive: true });
-              }
-            }
-
-            const indexPath = path.join(target, 'index.html');
-            if (fs.existsSync(indexPath)) {
-              const stat = fs.statSync(indexPath);
-              console.log('Verified index.html exists, size:', stat.size, 'bytes');
-            } else {
-              console.log('Files in playwright-report:', fs.readdirSync(target));
+            if (fs.existsSync(alt) && fs.readdirSync(alt).length > 0 && fs.readdirSync(target).length === 0) {
+              fs.cpSync(alt, target, { recursive: true });
             }
           "
 
-      - name: Upload Playwright HTML Report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-html-report
-          path: playwright-report
-          retention-days: 14
-
-      - name: Upload Test Results Artifacts
+      - name: Upload Test Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-test-results
-          path: test-results
+          path: |
+            playwright-report
+            test-results
           retention-days: 14
+
+      # Deploy report directly to GitHub Pages (gh-pages branch)
+      - name: Deploy Playwright Report to GitHub Pages
+        if: always()
+        uses: peaceiris/actions-gh-pages@v4
+        continue-on-error: true
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./playwright-report
+          keep_files: false
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
 
       - name: Publish Test Execution Summary
         if: always()
@@ -753,7 +746,8 @@ jobs:
             const summaryFile = process.env.GITHUB_STEP_SUMMARY;
             if (!summaryFile) process.exit(0);
 
-            const reportNote = '[Live Report] View report online via GitHub Pages (Repo -> Settings -> Pages -> Source: GitHub Actions) or download artifact below.';
+            const pageUrl = 'https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/';
+            const reportNote = '[Live Report] [Click here to open Playwright Report in Browser](' + pageUrl + ')';
             const markdown = [
               '### Playwright Test Execution Summary',
               '',
@@ -771,86 +765,11 @@ jobs:
               '| **Initial Run Status** | ' + initial + ' |',
               '| **Re-run Status** | ' + rerun + ' |',
               '',
-              'Artifacts: Check the summary attachments below for detailed HTML reports, JSON results, screenshots, and traces.'
+              'Artifacts: Download the attached artifacts below for offline viewing, traces, screenshots, and videos.'
             ].join('\n');
 
             fs.appendFileSync(summaryFile, markdown + '\n');
           "
-
-  # Dedicated deployment job for GitHub Pages (runs on GitHub Cloud Linux runner)
-  deploy-report:
-    name: Deploy Playwright HTML Report
-    needs: playwright-tests
-    if: always()
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    env:
-      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
-    steps:
-      - name: Download Playwright HTML Report
-        uses: actions/download-artifact@v4
-        with:
-          name: playwright-html-report
-          path: playwright-report
-
-      - name: Verify Downloaded Report Contents
-        run: |
-          node -e "
-            const fs = require('fs');
-            const path = require('path');
-            console.log('Inspecting downloaded report folder:');
-            if (fs.existsSync('playwright-report')) {
-              console.log('playwright-report files:', fs.readdirSync('playwright-report'));
-              const indexPath = path.join('playwright-report', 'index.html');
-              if (fs.existsSync(indexPath)) {
-                const stat = fs.statSync(indexPath);
-                console.log('Found index.html at root, size:', stat.size, 'bytes');
-              } else {
-                const nested = path.join('playwright-report', 'playwright-report');
-                if (fs.existsSync(nested)) {
-                  console.log('Found nested report directory, moving files to root...');
-                  fs.cpSync(nested, 'playwright-report', { recursive: true });
-                }
-              }
-            } else {
-              console.error('ERROR: playwright-report directory does not exist!');
-            }
-          "
-
-      - name: Setup GitHub Pages
-        uses: actions/configure-pages@v5
-        continue-on-error: true
-
-      - name: Upload Playwright HTML Report to GitHub Pages
-        id: upload_pages
-        uses: actions/upload-pages-artifact@v3
-        continue-on-error: true
-        with:
-          path: playwright-report
-
-      - name: Deploy Playwright Report to GitHub Pages
-        id: deployment
-        if: steps.upload_pages.outcome == 'success'
-        uses: actions/deploy-pages@v4
-        continue-on-error: true
-
-      - name: Publish Live Report Link to Summary
-        if: always()
-        run: |
-          PAGE_URL="${{ steps.deployment.outputs.page_url }}"
-          if [ -z "$PAGE_URL" ]; then
-            PAGE_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
-          fi
-          echo "### Live Playwright Test Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Report URL: $PAGE_URL" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "[Click here to open Playwright Report in Browser]($PAGE_URL)" >> $GITHUB_STEP_SUMMARY
 ```
 </code_example>
 </prompt>
