@@ -75,6 +75,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   playwright-tests:
     name: Execute Playwright Automated Tests
@@ -156,7 +161,8 @@ jobs:
       - name: Install Playwright Browsers
         run: |
           Write-Host "[INFO] Installing Playwright browser binaries..."
-          npx playwright install
+          npx playwright install --with-deps
+          npx playwright install chrome
 
       # ========================================================================
       # 5. INITIAL TEST EXECUTION
@@ -256,7 +262,7 @@ jobs:
       # 8. ARTIFACTS AND REPORTING
       # ========================================================================
       # UPDATE HERE: Customize retention days or artifact paths if needed.
-      # Default paths: results/test-results, results/playwright-report
+      # Default paths: playwright-report, test-results, results
       # ========================================================================
       - name: Upload Test Artifacts and Reports
         if: always()
@@ -264,9 +270,32 @@ jobs:
         with:
           name: playwright-test-results-${{ github.run_id }}
           path: |
-            results/test-results
+            playwright-report
+            test-results
             results/playwright-report
+            results/test-results
           retention-days: 14
+
+      # ========================================================================
+      # 8.1 GITHUB PAGES DEPLOYMENT (VIEW IN BROWSER ONLINE)
+      # ========================================================================
+      - name: Setup GitHub Pages
+        if: always()
+        uses: actions/configure-pages@v5
+        continue-on-error: true
+
+      - name: Upload Playwright HTML Report to GitHub Pages
+        if: always()
+        uses: actions/upload-pages-artifact@v3
+        continue-on-error: true
+        with:
+          path: playwright-report
+
+      - name: Deploy Playwright Report to GitHub Pages
+        id: deployment
+        if: always()
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
 
       # ========================================================================
       # 9. GITHUB STEP SUMMARY GENERATION
@@ -279,9 +308,17 @@ jobs:
           if (-not $RerunOutcome) { $RerunOutcomeDisplay = "N/A" } else { $RerunOutcomeDisplay = $RerunOutcome }
 
           $MachineName = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { $env:HOSTNAME }
+          $PageUrl = "${{ steps.deployment.outputs.page_url }}"
+          if ($PageUrl) {
+            $ReportHeader = "📊 **[Click Here to Open Playwright HTML Report in Browser]($PageUrl)**"
+          } else {
+            $ReportHeader = "ℹ️ *To enable browser viewing: Go to GitHub Repo -> Settings -> Pages -> Source: GitHub Actions.*"
+          }
 
           $SummaryLines = @(
             "### Playwright Test Execution Summary",
+            "",
+            $ReportHeader,
             "",
             "| Property | Value |",
             "| --- | --- |",

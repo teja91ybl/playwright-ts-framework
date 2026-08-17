@@ -86,11 +86,13 @@ README.md
 
 <file path="playwright.config.ts">
 - Google Chrome is default browser (`Desktop Chrome` with `channel: 'chrome'`).
-- `DEVICE` env mapping:
-  - `desktop` -> `Desktop Chrome` (channel: 'chrome')
-  - `mobile` -> `Pixel 5`
-  - `tablet` -> `iPad Pro 11`
-  - Fallback to `Desktop Chrome` if `DEVICE` is missing or invalid.
+- Dynamic device & browser mapping:
+  - `mobile` / `pixel 5` -> `Pixel 5`
+  - `tablet` / `ipad` -> `iPad Pro 11`
+  - `firefox` -> `Desktop Firefox`
+  - `webkit` -> `Desktop Safari`
+  - `chromium` -> `Desktop Chrome` (channel: 'chrome')
+  - `desktop` / default -> `Desktop Chrome` (channel: 'chrome')
 - `testDir` logic: If `mobile` or `tablet` -> `./tests/test-IPT-Mobile`; otherwise -> `./tests`.
 - Execution settings: `timeout: 120000`, `expect: { timeout: 20000 }`, `fullyParallel: true`, `retries: 0`, `workers: 1`, `outputDir: 'test-results'`.
 - Reporters: `./reporters/detailed-reporter.ts`, `./reporters/auto-heal-reporter.ts`, `html` ({ open: 'never', outputFolder: 'playwright-report' }), `list`.
@@ -114,26 +116,41 @@ process.env.PW_RUN_ID = process.env.PW_RUN_ID || createRunId();
 prepareReportHistory();
 
 const deviceType = (process.env.DEVICE || 'desktop').toLowerCase();
+const browserEnv = (process.env.BROWSER || '').toLowerCase();
 
-let selectedDeviceName: string;
-let selectedDeviceConfig: any;
-let channel: string | undefined;
+let activeProjectName = 'Desktop Chrome';
+let activeDeviceConfig: any = devices['Desktop Chrome'];
+let channel: string | undefined = 'chrome';
 
-if (deviceType === 'mobile') {
-  selectedDeviceName = 'Pixel 5';
-  selectedDeviceConfig = devices['Pixel 5'];
-} else if (deviceType === 'tablet') {
-  selectedDeviceName = 'iPad Pro 11';
-  selectedDeviceConfig = devices['iPad Pro 11'] || devices['iPad Pro'];
+if (deviceType === 'mobile' || browserEnv === 'pixel 5' || browserEnv === 'mobile') {
+  activeProjectName = 'Pixel 5';
+  activeDeviceConfig = devices['Pixel 5'];
+  channel = undefined;
+} else if (deviceType === 'tablet' || browserEnv.includes('ipad') || browserEnv === 'tablet') {
+  activeProjectName = 'iPad Pro 11';
+  activeDeviceConfig = devices['iPad Pro 11'] || devices['Desktop Chrome'];
+  channel = undefined;
+} else if (browserEnv === 'firefox') {
+  activeProjectName = 'firefox';
+  activeDeviceConfig = devices['Desktop Firefox'];
+  channel = undefined;
+} else if (browserEnv === 'webkit') {
+  activeProjectName = 'webkit';
+  activeDeviceConfig = devices['Desktop Safari'];
+  channel = undefined;
+} else if (browserEnv === 'chromium') {
+  activeProjectName = 'chromium';
+  activeDeviceConfig = devices['Desktop Chrome'];
+  channel = 'chrome';
 } else {
-  selectedDeviceName = 'Desktop Chrome';
-  selectedDeviceConfig = devices['Desktop Chrome'];
+  activeProjectName = 'Desktop Chrome';
+  activeDeviceConfig = devices['Desktop Chrome'];
   channel = 'chrome';
 }
 
-if (!selectedDeviceConfig) {
-  selectedDeviceName = 'Desktop Chrome';
-  selectedDeviceConfig = devices['Desktop Chrome'];
+if (!activeDeviceConfig) {
+  activeProjectName = 'Desktop Chrome';
+  activeDeviceConfig = devices['Desktop Chrome'];
   channel = 'chrome';
 }
 
@@ -141,10 +158,22 @@ const isMobileOrTablet = deviceType === 'mobile' || deviceType === 'tablet';
 const testDir = isMobileOrTablet ? './tests/test-IPT-Mobile' : './tests';
 const isHeaded = process.env.HEADED?.toLowerCase() === 'true';
 
+const projects = [
+  {
+    name: activeProjectName,
+    use: {
+      ...activeDeviceConfig,
+      ...(channel ? { channel } : {}),
+    },
+  },
+];
+
 export default defineConfig({
   testDir,
   timeout: 120000,
-  expect: { timeout: 20000 },
+  expect: {
+    timeout: 20000,
+  },
   fullyParallel: true,
   retries: 0,
   workers: 1,
@@ -173,15 +202,7 @@ export default defineConfig({
       ],
     },
   },
-  projects: [
-    {
-      name: selectedDeviceName,
-      use: {
-        ...selectedDeviceConfig,
-        ...(channel ? { channel } : {}),
-      },
-    },
-  ],
+  projects,
 });
 ```
 </code_example>
@@ -469,13 +490,193 @@ test.describe('GOOGLE Application Verification', () => {
 
 ### **Prompt 9: Create GitHub Actions Workflow**
 <prompt>
-<task>Create a production-ready GitHub Actions workflow (.github/workflows/playwright.yml) supporting GitHub Cloud & Windows Self-Hosted runners.</task>
+<task>Create a production-ready GitHub Actions workflow (.github/workflows/playwright.yml) supporting GitHub Cloud & Windows Self-Hosted runners with automated GitHub Pages live report deployment.</task>
 
 <requirements>
-1) Triggers: `workflow_dispatch` (inputs: `runner`, `environment`, `application`, `device`, `suite`, `browser`), `pull_request`, `push` on `main`.
-2) Job & Runner: Dynamic selection (`runs-on: ${{ github.event.inputs.runner || 'self-hosted' }}`), `defaults.run.shell: powershell`, clean ASCII logging, timeout-minutes 120, setup Node 24, npm ci, cache browser binaries.
-3) Machine & Environment Tracking: Export `TEST_ENV`, `TEST_APP`, `DEVICE`, print Virtual Machine / Runner Name, OS, and Architecture in console execution headers and Step Summaries.
-4) Execution & Rerun: Filter suite by `--grep`, support `--project=$env:BROWSER`, re-run failed tests with `--last-failed`.
-5) Artifacts: Always upload `results/test-results` and `results/playwright-report` (14 days retention).
+1) Permissions: `contents: read`, `pages: write`, `id-token: write`.
+2) Triggers: `workflow_dispatch` (inputs: `runner`, `environment`, `application`, `device`, `suite`, `browser`), `pull_request`, `push` on `main`.
+3) Job & Runner: Dynamic selection (`runs-on: ${{ github.event.inputs.runner || 'self-hosted' }}`), `defaults.run.shell: powershell`, clean ASCII logging, timeout-minutes 120, setup Node 24, npm ci, cache browser binaries.
+4) Browser Installation: Run `npx playwright install --with-deps` and `npx playwright install chrome` to ensure all browser binaries and OS dependencies are available.
+5) Machine & Environment Tracking: Export `TEST_ENV`, `TEST_APP`, `DEVICE`, print Virtual Machine / Runner Name, OS, and Architecture in console execution headers and Step Summaries.
+6) Execution & Rerun: Filter suite by `--grep`, support `--project=$env:BROWSER`, re-run failed tests with `--last-failed`.
+7) Artifacts & Live Pages Deployment:
+   - Always upload `playwright-report` and `test-results` artifacts (`actions/upload-artifact@v4`, 14 days retention).
+   - Automatically deploy HTML report to GitHub Pages using `actions/configure-pages@v5`, `actions/upload-pages-artifact@v3`, and `actions/deploy-pages@v4`.
+   - Publish direct live HTML report link in `$env:GITHUB_STEP_SUMMARY`.
 </requirements>
+
+<code_example file=".github/workflows/playwright.yml">
+```yaml
+name: Playwright Tests Execution
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner environment'
+        required: true
+        default: 'self-hosted'
+        type: choice
+        options:
+          - self-hosted
+          - windows-latest
+          - ubuntu-latest
+          - macos-latest
+      environment:
+        description: 'Target test environment'
+        required: true
+        default: 'test'
+        type: choice
+        options:
+          - dev
+          - test
+          - stage
+          - prod
+      application:
+        description: 'Application under test'
+        required: true
+        default: 'GOOGLE'
+        type: choice
+        options:
+          - GOOGLE
+          - APPLE
+      device:
+        description: 'Device profile'
+        required: true
+        default: 'desktop'
+        type: choice
+        options:
+          - desktop
+          - mobile
+          - tablet
+      suite:
+        description: 'Test suite / tag'
+        required: true
+        default: 'smoke'
+        type: choice
+        options:
+          - smoke
+          - regression
+          - targetedRegression
+          - all
+      browser:
+        description: 'Browser channel'
+        required: true
+        default: 'chromium'
+        type: choice
+        options:
+          - chromium
+          - firefox
+          - webkit
+
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  playwright-tests:
+    name: Execute Playwright Automated Tests
+    runs-on: ${{ github.event.inputs.runner || 'self-hosted' }}
+    timeout-minutes: 120
+
+    defaults:
+      run:
+        shell: powershell
+
+    env:
+      TEST_ENV: ${{ github.event.inputs.environment || 'test' }}
+      TEST_APP: ${{ github.event.inputs.application || 'GOOGLE' }}
+      DEVICE: ${{ github.event.inputs.device || 'desktop' }}
+      SUITE: ${{ github.event.inputs.suite || 'smoke' }}
+      BROWSER: ${{ github.event.inputs.browser || 'chromium' }}
+      CI: 'true'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (v24)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers
+        run: |
+          npx playwright install --with-deps
+          npx playwright install chrome
+
+      - name: Run Playwright Tests
+        id: run_playwright_tests
+        continue-on-error: true
+        run: |
+          $GrepArg = ""
+          switch ($env:SUITE) {
+            "smoke"              { $GrepArg = '--grep "@Smoke|@smoke"' }
+            "regression"         { $GrepArg = '--grep "@Regression|@regression"' }
+            "targetedRegression" { $GrepArg = '--grep "@TargetedRegression|@targeted"' }
+            default              { $GrepArg = "" }
+          }
+          if ($GrepArg) {
+            $cmd = "npx playwright test --project=$env:BROWSER $GrepArg"
+          } else {
+            $cmd = "npx playwright test --project=$env:BROWSER"
+          }
+          Invoke-Expression $cmd
+
+      - name: Re-run Failed Tests
+        id: rerun_failed_tests
+        if: steps.run_playwright_tests.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          npx playwright test --last-failed --project=$env:BROWSER
+
+      - name: Finalize Test Status
+        run: |
+          $Initial = "${{ steps.run_playwright_tests.outcome }}"
+          $Rerun = "${{ steps.rerun_failed_tests.outcome }}"
+          if ($Initial -eq "failure" -and $Rerun -eq "failure") { exit 1 }
+
+      - name: Upload Test Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-${{ github.run_id }}
+          path: |
+            playwright-report
+            test-results
+          retention-days: 14
+
+      - name: Setup GitHub Pages
+        if: always()
+        uses: actions/configure-pages@v5
+        continue-on-error: true
+
+      - name: Upload Report to Pages
+        if: always()
+        uses: actions/upload-pages-artifact@v3
+        continue-on-error: true
+        with:
+          path: playwright-report
+
+      - name: Deploy Report to GitHub Pages
+        id: deployment
+        if: always()
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+```
+</code_example>
 </prompt>

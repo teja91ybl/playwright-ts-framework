@@ -8,32 +8,57 @@ process.env.PW_RUN_ID = process.env.PW_RUN_ID || createRunId();
 prepareReportHistory();
 
 const deviceType = (process.env.DEVICE || 'desktop').toLowerCase();
+const browserEnv = (process.env.BROWSER || '').toLowerCase();
 
-let selectedDeviceName: string;
-let selectedDeviceConfig: any;
-let channel: string | undefined;
+let activeProjectName = 'Desktop Chrome';
+let activeDeviceConfig: any = devices['Desktop Chrome'];
+let channel: string | undefined = 'chrome';
 
-if (deviceType === 'mobile') {
-  selectedDeviceName = 'Pixel 5';
-  selectedDeviceConfig = devices['Pixel 5'];
-} else if (deviceType === 'tablet') {
-  selectedDeviceName = 'iPad Pro 11';
-  selectedDeviceConfig = devices['iPad Pro 11'] || devices['iPad Pro'];
+if (deviceType === 'mobile' || browserEnv === 'pixel 5' || browserEnv === 'mobile') {
+  activeProjectName = 'Pixel 5';
+  activeDeviceConfig = devices['Pixel 5'];
+  channel = undefined;
+} else if (deviceType === 'tablet' || browserEnv.includes('ipad') || browserEnv === 'tablet') {
+  activeProjectName = 'iPad Pro 11';
+  activeDeviceConfig = devices['iPad Pro 11'] || devices['Desktop Chrome'];
+  channel = undefined;
+} else if (browserEnv === 'firefox') {
+  activeProjectName = 'firefox';
+  activeDeviceConfig = devices['Desktop Firefox'];
+  channel = undefined;
+} else if (browserEnv === 'webkit') {
+  activeProjectName = 'webkit';
+  activeDeviceConfig = devices['Desktop Safari'];
+  channel = undefined;
+} else if (browserEnv === 'chromium') {
+  activeProjectName = 'chromium';
+  activeDeviceConfig = devices['Desktop Chrome'];
+  channel = 'chrome';
 } else {
-  selectedDeviceName = 'Desktop Chrome';
-  selectedDeviceConfig = devices['Desktop Chrome'];
+  activeProjectName = 'Desktop Chrome';
+  activeDeviceConfig = devices['Desktop Chrome'];
   channel = 'chrome';
 }
 
-if (!selectedDeviceConfig) {
-  selectedDeviceName = 'Desktop Chrome';
-  selectedDeviceConfig = devices['Desktop Chrome'];
+if (!activeDeviceConfig) {
+  activeProjectName = 'Desktop Chrome';
+  activeDeviceConfig = devices['Desktop Chrome'];
   channel = 'chrome';
 }
 
 const isMobileOrTablet = deviceType === 'mobile' || deviceType === 'tablet';
 const testDir = isMobileOrTablet ? './tests/test-IPT-Mobile' : './tests';
 const isHeaded = process.env.HEADED?.toLowerCase() === 'true';
+
+const projects = [
+  {
+    name: activeProjectName,
+    use: {
+      ...activeDeviceConfig,
+      ...(channel ? { channel } : {}),
+    },
+  },
+];
 
 export default defineConfig({
   testDir,
@@ -69,13 +94,5 @@ export default defineConfig({
       ],
     },
   },
-  projects: [
-    {
-      name: selectedDeviceName,
-      use: {
-        ...selectedDeviceConfig,
-        ...(channel ? { channel } : {}),
-      },
-    },
-  ],
+  projects,
 });
