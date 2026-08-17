@@ -2,7 +2,7 @@
 
 A reusable, cross-platform (Windows / macOS / Linux) Playwright + TypeScript test automation framework adhering to Page Object Model (POM) design patterns, environment configuration management, multi-browser execution, and clean HTML/JSON reporting.
 
----
+-----
 
 ## ⚡ Quick Setup
 
