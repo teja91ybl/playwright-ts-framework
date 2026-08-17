@@ -586,7 +586,6 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
 
 jobs:
   playwright-tests:
@@ -703,7 +702,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-test-results-${{ github.run_id }}
+          name: playwright-report-artifact
           path: |
             playwright-report
             test-results
@@ -759,25 +758,42 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
     steps:
       - name: Download Playwright Report Artifact
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
-          name: playwright-test-results-${{ github.run_id }}
+          name: playwright-report-artifact
           path: playwright-artifacts
 
       - name: Prepare Report Directory
         run: |
-          mkdir -p playwright-report
-          if [ -d "playwright-artifacts/playwright-report" ]; then
-            cp -r playwright-artifacts/playwright-report/* playwright-report/
-          elif [ -d "playwright-artifacts" ]; then
-            cp -r playwright-artifacts/* playwright-report/
-          fi
-          if [ ! -f "playwright-report/index.html" ]; then
-            echo "<html><body><h2>Playwright Test Run Complete</h2><p>Check downloadable artifacts for test execution details.</p></body></html>" > playwright-report/index.html
-          fi
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const targetDir = 'playwright-report';
+            if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+
+            const locations = [
+              path.join('playwright-artifacts', 'playwright-report'),
+              'playwright-artifacts'
+            ];
+
+            for (const loc of locations) {
+              if (fs.existsSync(loc) && loc !== targetDir) {
+                try {
+                  fs.cpSync(loc, targetDir, { recursive: true });
+                } catch (e) {
+                  console.log('Copy notice:', e.message);
+                }
+              }
+            }
+
+            const indexPath = path.join(targetDir, 'index.html');
+            if (!fs.existsSync(indexPath)) {
+              fs.writeFileSync(indexPath, '<!DOCTYPE html><html><head><title>Playwright Report</title></head><body><h2>Playwright Test Execution Report</h2><p>Tests completed. Download full artifacts from the workflow run summary.</p></body></html>');
+            }
+          "
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
