@@ -119,10 +119,10 @@ jobs:
       # ========================================================================
       # 4. SYSTEM & DEPENDENCY SETUP
       # ========================================================================
-      - name: Setup Node.js (v24)
+      - name: Setup Node.js (v22 LTS)
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '22'
 
       - name: Install Dependencies
         run: npm ci
@@ -137,41 +137,7 @@ jobs:
       - name: Run Playwright Tests
         id: run_playwright_tests
         continue-on-error: true
-        run: |
-          node -e "
-            const { execSync } = require('child_process');
-            const os = require('os');
-            console.log('==================================================');
-            console.log('STARTING PLAYWRIGHT TEST RUN');
-            console.log('Machine Name:', '${{ runner.name }} (' + os.hostname() + ')');
-            console.log('OS / Arch   :', '${{ runner.os }} (${{ runner.arch }})');
-            console.log('Environment :', process.env.TEST_ENV || 'test');
-            console.log('Application :', process.env.TEST_APP || 'GOOGLE');
-            console.log('Device      :', process.env.DEVICE || 'desktop');
-            console.log('Browser     :', process.env.BROWSER || 'chromium');
-            console.log('Suite       :', process.env.SUITE || 'smoke');
-            console.log('==================================================');
-
-            const suite = (process.env.SUITE || 'smoke').toLowerCase();
-            const browser = (process.env.BROWSER || 'chromium').toLowerCase();
-            let grep = '';
-            if (suite === 'smoke') grep = '@Smoke|@smoke';
-            else if (suite === 'regression') grep = '@Regression|@regression';
-            else if (suite === 'targetedregression') grep = '@TargetedRegression|@targeted';
-
-            let cmd = 'npx playwright test';
-            if (browser) cmd += ' --project=' + browser;
-            if (grep) cmd += ' --grep \"' + grep + '\"';
-
-            console.log('Executing:', cmd);
-            try {
-              execSync(cmd, { stdio: 'inherit', env: process.env });
-              process.exit(0);
-            } catch (err) {
-              console.error('[ERROR] Playwright tests failed with exit code:', err.status || 1);
-              process.exit(err.status || 1);
-            }
-          "
+        run: node scripts/run-tests.js
 
       # ========================================================================
       # 6. FAILED-TEST RERUN GATE (CROSS-PLATFORM)
@@ -180,55 +146,40 @@ jobs:
         id: rerun_failed_tests
         if: steps.run_playwright_tests.outcome == 'failure'
         continue-on-error: true
-        run: |
-          node -e "
-            const { execSync } = require('child_process');
-            console.log('==================================================');
-            console.log('RETRYING FAILED TESTS ONLY (--last-failed)');
-            console.log('==================================================');
-            const browser = (process.env.BROWSER || 'chromium').toLowerCase();
-            let cmd = 'npx playwright test --last-failed';
-            if (browser) cmd += ' --project=' + browser;
-
-            console.log('Executing rerun:', cmd);
-            try {
-              execSync(cmd, { stdio: 'inherit', env: process.env });
-              process.exit(0);
-            } catch (err) {
-              console.error('[ERROR] Playwright rerun failed with exit code:', err.status || 1);
-              process.exit(err.status || 1);
-            }
-          "
+        run: node scripts/run-tests.js --rerun
 
       # ========================================================================
       # 7. FINAL STATUS EVALUATION GATE (CROSS-PLATFORM)
       # ========================================================================
       - name: Finalize test status
         if: always()
+        env:
+          INITIAL_OUTCOME: ${{ steps.run_playwright_tests.outcome }}
+          RERUN_OUTCOME: ${{ steps.rerun_failed_tests.outcome }}
         run: |
-          node -e "
-            const initial = '${{ steps.run_playwright_tests.outcome }}';
-            const rerun = '${{ steps.rerun_failed_tests.outcome }}';
-            console.log('==================================================');
-            console.log('FINAL TEST STATUS EVALUATION');
-            console.log('Initial Run Outcome :', initial);
-            console.log('Re-run Outcome      :', rerun || 'N/A (Skipped)');
-            console.log('==================================================');
+          node -e '
+            const initial = process.env.INITIAL_OUTCOME;
+            const rerun = process.env.RERUN_OUTCOME;
+            console.log("==================================================");
+            console.log("FINAL TEST STATUS EVALUATION");
+            console.log("Initial Run Outcome :", initial);
+            console.log("Re-run Outcome      :", rerun || "N/A (Skipped)");
+            console.log("==================================================");
 
-            if (initial === 'failure' && rerun === 'failure') {
-              console.error('[CRITICAL] Initial test run AND rerun both failed.');
+            if (initial === "failure" && rerun === "failure") {
+              console.error("[CRITICAL] Both initial run and rerun failed.");
               process.exit(1);
-            } else if (initial === 'failure' && rerun === 'success') {
-              console.log('[WARNING] Initial run failed, but rerun passed all failing tests.');
+            } else if (initial === "failure" && rerun === "success") {
+              console.log("[WARNING] Initial run failed, but rerun passed.");
               process.exit(0);
-            } else if (initial === 'success') {
-              console.log('[SUCCESS] All tests passed on initial execution.');
+            } else if (initial === "success") {
+              console.log("[SUCCESS] All tests passed on initial execution.");
               process.exit(0);
             } else {
-              console.log('[INFO] Workflow completed with initial outcome:', initial);
+              console.log("[INFO] Workflow completed with outcome:", initial);
               process.exit(0);
             }
-          "
+          '
 
       # ========================================================================
       # 8. ARTIFACTS AND DEPLOYMENT
@@ -266,42 +217,50 @@ jobs:
       # ========================================================================
       - name: Publish Test Execution Summary
         if: always()
+        env:
+          INITIAL_OUTCOME: ${{ steps.run_playwright_tests.outcome }}
+          RERUN_OUTCOME: ${{ steps.rerun_failed_tests.outcome }}
+          RUNNER_NAME: ${{ runner.name }}
+          RUNNER_OS: ${{ runner.os }}
+          RUNNER_ARCH: ${{ runner.arch }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
         run: |
-          node -e "
-            const fs = require('fs');
-            const os = require('os');
-            const initial = '${{ steps.run_playwright_tests.outcome }}';
-            const rerun = '${{ steps.rerun_failed_tests.outcome }}' || 'N/A';
+          node -e '
+            const fs = require("fs");
+            const os = require("os");
+            const initial = process.env.INITIAL_OUTCOME || "unknown";
+            const rerun = process.env.RERUN_OUTCOME || "N/A";
             const machine = os.hostname();
             const summaryFile = process.env.GITHUB_STEP_SUMMARY;
             if (!summaryFile) process.exit(0);
 
-            const repoFull = process.env.GITHUB_REPOSITORY || '${{ github.repository }}' || '';
-            const [owner, repoName] = repoFull.includes('/') ? repoFull.split('/') : ['${{ github.repository_owner }}', 'playwright-ts-framework'];
-            const pageUrl = 'https://' + owner + '.github.io/' + repoName + '/';
-            const reportNote = '[Live Report] [Click here to open Playwright Report in Browser](' + pageUrl + ')';
+            const repoFull = process.env.GITHUB_REPOSITORY || (process.env.REPO_OWNER + "/" + process.env.REPO_NAME);
+            const [owner, repoName] = repoFull.includes("/") ? repoFull.split("/") : [process.env.REPO_OWNER, "playwright-ts-framework"];
+            const pageUrl = "https://" + owner + ".github.io/" + repoName + "/";
+            const reportNote = "[Live Report] [Click here to open Playwright Report in Browser](" + pageUrl + ")";
             const markdown = [
-              '### Playwright Test Execution Summary',
-              '',
+              "### Playwright Test Execution Summary",
+              "",
               reportNote,
-              '',
-              '| Property | Value |',
-              '| --- | --- |',
-              '| **Execution Machine / VM** | \`${{ runner.name }} (' + machine + ')\` |',
-              '| **OS / Architecture** | \`${{ runner.os }} (${{ runner.arch }})\` |',
-              '| **Environment** | ' + (process.env.TEST_ENV || 'test') + ' |',
-              '| **Application** | ' + (process.env.TEST_APP || 'GOOGLE') + ' |',
-              '| **Device** | ' + (process.env.DEVICE || 'desktop') + ' |',
-              '| **Suite** | ' + (process.env.SUITE || 'smoke') + ' |',
-              '| **Browser** | ' + (process.env.BROWSER || 'chromium') + ' |',
-              '| **Initial Run Status** | ' + initial + ' |',
-              '| **Re-run Status** | ' + rerun + ' |',
-              '',
-              'Artifacts: Download the attached artifacts below for offline viewing, traces, screenshots, and videos.'
-            ].join('\n');
+              "",
+              "| Property | Value |",
+              "| --- | --- |",
+              "| **Execution Machine / VM** | `" + (process.env.RUNNER_NAME || "Runner") + " (" + machine + ")` |",
+              "| **OS / Architecture** | `" + (process.env.RUNNER_OS || os.platform()) + " (" + (process.env.RUNNER_ARCH || os.arch()) + ")` |",
+              "| **Environment** | " + (process.env.TEST_ENV || "test") + " |",
+              "| **Application** | " + (process.env.TEST_APP || "GOOGLE") + " |",
+              "| **Device** | " + (process.env.DEVICE || "desktop") + " |",
+              "| **Suite** | " + (process.env.SUITE || "smoke") + " |",
+              "| **Browser** | " + (process.env.BROWSER || "chromium") + " |",
+              "| **Initial Run Status** | " + initial + " |",
+              "| **Re-run Status** | " + rerun + " |",
+              "",
+              "Artifacts: Download the attached artifacts below for offline viewing, traces, screenshots, and videos."
+            ].join("\n");
 
-            fs.appendFileSync(summaryFile, markdown + '\n');
-          "
+            fs.appendFileSync(summaryFile, markdown + "\n");
+          '
 
   # ============================================================================
   # JOB 2: DEPLOY REPORT TO GITHUB PAGES (GitHub Actions UI Deployment Job)
@@ -357,20 +316,24 @@ jobs:
 
       - name: Publish Live Report Link to Summary
         if: always()
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
         run: |
-          node -e "
-            const fs = require('fs');
+          node -e '
+            const fs = require("fs");
             const summaryFile = process.env.GITHUB_STEP_SUMMARY;
             if (!summaryFile) process.exit(0);
-            const repoFull = '${{ github.repository }}';
-            const [owner, repoName] = repoFull.split('/');
-            const pageUrl = '${{ steps.deployment.outputs.page_url }}' || ('https://' + owner + '.github.io/' + repoName + '/');
+            const repoFull = process.env.GITHUB_REPOSITORY || (process.env.REPO_OWNER + "/" + process.env.REPO_NAME);
+            const [owner, repoName] = repoFull.includes("/") ? repoFull.split("/") : [process.env.REPO_OWNER, "playwright-ts-framework"];
+            const pageUrl = process.env.PAGE_URL || ("https://" + owner + ".github.io/" + repoName + "/");
             const content = [
-              '### Live Playwright Test Report',
-              '',
-              '**Report URL:** ' + pageUrl,
-              '',
-              '[Click here to open Interactive Playwright Report in Browser](' + pageUrl + ')'
-            ].join('\n');
-            fs.appendFileSync(summaryFile, content + '\n');
-          "
+              "### Live Playwright Test Report",
+              "",
+              "**Report URL:** " + pageUrl,
+              "",
+              "[Click here to open Interactive Playwright Report in Browser](" + pageUrl + ")"
+            ].join("\n");
+            fs.appendFileSync(summaryFile, content + "\n");
+          '
